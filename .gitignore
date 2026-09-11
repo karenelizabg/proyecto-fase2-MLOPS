@@ -1,0 +1,11 @@
+# Entorno y credenciales locales (las plantillas sí se versionan).
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Entorno Python opcional para DVC.
+.venv-dvc/
+
+# Credenciales específicas de DVC; nunca se comparten con Git.
+.dvc/config.local
