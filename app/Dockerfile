@@ -8,7 +8,9 @@ RUN useradd --system --no-create-home appuser
 
 COPY pyproject.toml uv.lock ./
 ENV UV_HTTP_TIMEOUT=180
-RUN uv sync --locked --no-install-project --no-dev
+ENV UV_CONCURRENT_DOWNLOADS=2
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-install-project --no-dev --no-build
 
 COPY ingestion/ ./ingestion/
 COPY analyzers/ ./analyzers/
