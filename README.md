@@ -635,3 +635,78 @@ Antes de cerrar P2-04, verificar:
 - `git log --all -p -S 'AKIA'` no devuelve resultados.
 - `.env` y `.dvc/config.local` permanecen fuera de Git.
 - Los buckets `mlops-p2-dvc-cache` y `mlops-p2-dataset-releases` existen en AWS.
+
+## Frente 1 — Arquitectura y entorno del pipeline de calidad
+
+El portal de anotación (arriba) ya no es el entregable de la Fase 2: es la
+fuente del COCO crudo. El entregable es un pipeline en Python que mide la
+calidad de ese COCO, decide si se libera y versiona el resultado con DVC.
+
+Este frente deja listo el esqueleto; la lógica de cada tier la completan los
+frentes 2 a 6.
+
+### Capas (`app/`)
+
+El pipeline vive en `app/`, como paquete Python independiente (hermano de
+`backend/` y `frontend/`), con una carpeta por capa:
+
+```text
+app/
+  ingestion/      Tier 1 — COCO crudo del Proyecto 1
+  analyzers/      Tier 2 — 5 analizadores de calidad (objetos pequeños,
+                  desbalance, duplicados, cajas inválidas, sesgo espacial)
+  policies/       Tier 3 — compuerta de calidad (policies/quality.yaml)
+  splits/         Tier 4 — split estratificado train/val/test
+  storage/        Tier 5 — MariaDB y MinIO/S3 (DVC)
+  presentation/   Expone los resultados a la app web y al Dataset Copilot
+```
+
+**Regla de la compuerta de acoplamiento:** solo `storage/` importa `os`
+(para leer variables de entorno), crea clientes `boto3`/`Minio(` o abre un
+`create_engine`/`pymysql.connect`. Todas las demás capas son funciones puras
+que reciben los datos ya cargados como argumento — así se pueden probar con
+`pytest` sin levantar MariaDB/MinIO reales. Se verifica con:
+
+```bash
+grep -rn "os\.environ\|os\.getenv\|boto3\.client\|Minio(\|create_engine\|pymysql\.connect" app/analyzers/
+```
+
+(sin resultados) y con `app/tests/test_architecture.py`, que corre lo mismo
+en CI.
+
+### Levantar todo
+
+```bash
+docker compose up
+```
+
+Además de `mariadb`, `minio`, `backend` y `frontend` (portal P1, se mantiene
+porque la cola de re-anotación —cuando la compuerta bloquea el release—
+ocurre ahí), se agrega el servicio `app`: el pipeline Python, que reutiliza
+el mismo MariaDB y el mismo MinIO del portal (mismas credenciales de
+`.env`, sin variables nuevas). Al arrancar, `app` valida que puede
+conectarse a ambos y queda a la espera de que los siguientes frentes
+implementen la lógica de cada tier.
+
+### Python y lockfile
+
+`app/pyproject.toml` fija `requires-python = "==3.12.*"` y `app/Dockerfile`
+usa `python:3.12-slim` — misma versión en ambos lados. Las dependencias
+quedan pineadas en `app/requirements.txt` (generado con `pip freeze` dentro
+de un contenedor `python:3.12-slim`, no a mano), que es lo que instala el
+`Dockerfile`.
+
+### Supuestos de este frente pendientes de confirmar con Karen/Heri
+
+Lo siguiente se infirió a partir del diagrama de tiers y los mockups del
+profe, y del trabajo ya mergeado de DVC (P2-04); si Karen decide otra cosa,
+son fáciles de mover porque todo el pipeline está aislado en `app/`:
+
+- El portal Node (`backend`/`frontend`) se queda corriendo junto al pipeline
+  en el mismo `docker-compose.yml`, en vez de retirarse porque "el portal ya
+  no es el entregable".
+- El pipeline reutiliza el MariaDB/MinIO del portal (misma base
+  `image_repo`, mismo bucket `image-annotations`) en vez de tener su propia
+  infraestructura de datos en dev.
+- Quién es responsable del frente 4 (compuerta) no estaba claro en el
+  reparto compartido — confirmar con Karen.

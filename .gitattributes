@@ -1,0 +1,4 @@
+# Los scripts que se ejecutan dentro de contenedores Linux necesitan LF sí o
+# sí: con CRLF (por ejemplo, `core.autocrlf=true` en Windows) el shebang se
+# rompe y el contenedor falla con "no such file or directory" al arrancar.
+*.sh text eol=lf
