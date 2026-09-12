@@ -322,3 +322,316 @@ que el portal funcione de punta a punta:
 - El frontend habla con el backend a través del proxy `/api` de Vite en
   desarrollo. `VITE_API_BASE_URL` puede dejarse en `/api`; en producción se
   apunta a la URL real del backend.
+
+## P2-04 — MinIO local y remotes DVC
+
+Esta sección configura el almacenamiento DVC sin cambiar el portal de P1.
+
+- `dev` usa `s3://dvc-cache` con endpoint `http://localhost:9000` (MinIO local).
+- `prod` usa `s3://mlops-p2-dvc-cache` en AWS S3.
+- `mlops-p2-dataset-releases` se reserva para releases finales del dataset; no es un remote DVC.
+
+### Resumen rápido
+
+- `dev` → MinIO local, bucket `dvc-cache`.
+- `prod` → AWS S3, bucket `mlops-p2-dvc-cache`.
+- `mlops-p2-dataset-releases` → releases finales del dataset.
+- Git versiona la configuración y los archivos `.dvc`; los binarios se guardan en los remotes.
+- Cada integrante necesita sus propias credenciales locales de MinIO y su propio acceso SSO a AWS.
+- No se comparten contraseñas, access keys, secret keys ni tokens SSO.
+
+### Preparar un clon limpio
+
+Desde la raíz del proyecto, crea tu archivo `.env` local a partir de la plantilla:
+
+```bash
+test -e .env || cp .env.example .env
+chmod 600 .env
+```
+
+Completa:
+
+```text
+MINIO_ROOT_USER=
+MINIO_ROOT_PASSWORD=
+```
+
+con valores locales propios.
+
+Puedes generar una contraseña con:
+
+```bash
+openssl rand -hex 32
+```
+
+No uses claves AWS en `.env`.
+
+`frontend/.env.example` es independiente y no cambia para este ticket.
+
+Levanta MinIO:
+
+```bash
+docker compose up -d --no-deps minio
+```
+
+### Instalar DVC
+
+Instala DVC con soporte S3 en un entorno Python separado:
+
+```bash
+python3 -m venv .venv-dvc
+. .venv-dvc/bin/activate
+python -m pip install 'dvc[s3]==3.67.1'
+export DVC_NO_ANALYTICS=1
+export DVC_SITE_CACHE_DIR="${TMPDIR:-/tmp}/p2-04-dvc-site-cache"
+```
+
+El repositorio ya contiene la inicialización de DVC y la configuración de los remotes, por lo que no es necesario ejecutar `dvc init`.
+
+### Configurar `dev` con MinIO local
+
+Carga las variables de tu `.env`:
+
+```bash
+set -a
+. ./.env
+set +a
+```
+
+Configura las credenciales de MinIO únicamente de forma local:
+
+```bash
+dvc remote modify --local dev access_key_id "$MINIO_ROOT_USER"
+dvc remote modify --local dev secret_access_key "$MINIO_ROOT_PASSWORD"
+chmod 600 .dvc/config.local
+```
+
+No omitas `--local`.
+
+No agregues `.env` ni `.dvc/config.local` a Git.
+
+### Crear el bucket local `dvc-cache`
+
+Si el bucket `dvc-cache` todavía no existe en MinIO, créalo con:
+
+```bash
+python - <<'PY'
+import os
+from botocore.session import get_session
+from botocore.exceptions import ClientError
+
+client = get_session().create_client(
+    's3',
+    endpoint_url='http://localhost:9000',
+    region_name='us-east-1',
+    aws_access_key_id=os.environ['MINIO_ROOT_USER'],
+    aws_secret_access_key=os.environ['MINIO_ROOT_PASSWORD'],
+)
+
+try:
+    client.head_bucket(Bucket='dvc-cache')
+except ClientError as error:
+    if error.response['ResponseMetadata']['HTTPStatusCode'] != 404:
+        raise
+    client.create_bucket(Bucket='dvc-cache')
+
+print('Bucket local dvc-cache disponible')
+PY
+```
+
+Este paso solo opera contra MinIO local en `localhost:9000`.
+
+No modifica el bucket `image-annotations` usado por el portal.
+
+### Verificar los remotes
+
+Ejecuta:
+
+```bash
+dvc remote list -v
+```
+
+La salida debe incluir:
+
+```text
+dev     s3://dvc-cache
+prod    s3://mlops-p2-dvc-cache
+```
+
+### Subir y bajar archivos con `dev`
+
+Primero registra el archivo o directorio con DVC:
+
+```bash
+dvc add ruta/al/dataset
+```
+
+Para subirlo a MinIO:
+
+```bash
+dvc push -r dev
+```
+
+Para recuperarlo:
+
+```bash
+dvc pull -r dev
+```
+
+Los archivos `.dvc` generados se comparten mediante Git.
+
+Los binarios se guardan en MinIO, no directamente en GitHub.
+
+### AWS S3 y remote `prod`
+
+AWS está configurado en la región:
+
+```text
+us-east-1
+```
+
+Buckets usados por el proyecto:
+
+| Bucket | Uso |
+|---|---|
+| `mlops-p2-dvc-cache` | Remote DVC `prod`. |
+| `mlops-p2-dataset-releases` | Releases finales del dataset. |
+
+`prod` utiliza AWS S3 real y no utiliza un endpoint personalizado.
+
+Cada integrante necesita su propia identidad autorizada mediante AWS IAM Identity Center / SSO.
+
+El perfil local recomendado es:
+
+```text
+mlops-p2
+```
+
+Instala AWS CLI v2 y comprueba la instalación:
+
+```bash
+aws --version
+```
+
+Configura el acceso SSO:
+
+```bash
+aws configure sso --profile mlops-p2
+aws sso login --profile mlops-p2
+aws sts get-caller-identity --profile mlops-p2
+```
+
+Usa la región:
+
+```text
+us-east-1
+```
+
+No copies la salida de `aws sts get-caller-identity` al repositorio.
+
+Configura el perfil únicamente de forma local para DVC:
+
+```bash
+dvc remote modify --local prod profile mlops-p2
+```
+
+Comprueba nuevamente los remotes:
+
+```bash
+dvc remote list -v
+```
+
+La salida debe incluir:
+
+```text
+dev     s3://dvc-cache
+prod    s3://mlops-p2-dvc-cache
+```
+
+Para subir archivos a AWS S3:
+
+```bash
+dvc push -r prod
+```
+
+Para recuperarlos:
+
+```bash
+dvc pull -r prod
+```
+
+Si la sesión SSO expira:
+
+```bash
+aws sso login --profile mlops-p2
+```
+
+### Flujo recomendado para el equipo
+
+1. Hacer `git pull` para obtener los metadatos `.dvc` más recientes.
+2. Activar el entorno de DVC.
+3. Iniciar sesión con AWS SSO si se va a usar `prod`.
+4. Ejecutar `dvc pull -r prod` para recuperar los archivos del dataset compartido.
+5. Agregar o actualizar archivos del dataset.
+6. Ejecutar `dvc add <ruta>` para actualizar los metadatos.
+7. Ejecutar `dvc push -r prod` para subir los binarios a S3.
+8. Versionar con Git los archivos `.dvc` y los cambios de código correspondientes.
+
+No subas los binarios grandes directamente al repositorio de GitHub.
+
+### Seguridad y validación
+
+Los siguientes archivos o datos no deben versionarse:
+
+- `.env`
+- `.dvc/config.local`
+- access keys de AWS
+- secret keys de AWS
+- tokens SSO
+- credenciales reales de MinIO
+
+Comprueba que los archivos privados estén ignorados:
+
+```bash
+git check-ignore .env .dvc/config.local
+```
+
+La salida debe incluir:
+
+```text
+.env
+.dvc/config.local
+```
+
+Comprueba que `.env.example` sí pueda versionarse:
+
+```bash
+git check-ignore .env.example
+```
+
+Ese comando no debe mostrar salida.
+
+Comprueba que no existan access keys AWS con prefijo `AKIA` en el historial:
+
+```bash
+git log --all -p -S 'AKIA'
+```
+
+La salida debe estar vacía.
+
+P2-04 externaliza las credenciales MinIO usadas por Docker Compose y evita agregar secretos AWS al repositorio.
+
+No se reescribe el historial de Git ni se modifica la configuración heredada de MariaDB.
+
+### Criterios de aceptación
+
+Antes de cerrar P2-04, verificar:
+
+- `docker compose up -d --no-deps minio` levanta MinIO.
+- `.env.example` existe y no contiene credenciales reales.
+- `dvc remote list -v` muestra `dev` y `prod`.
+- `dvc push -r dev` funciona siguiendo este README desde un clon limpio.
+- `dvc push -r prod` y `dvc pull -r prod` funcionan con AWS S3.
+- `git log --all -p -S 'AKIA'` no devuelve resultados.
+- `.env` y `.dvc/config.local` permanecen fuera de Git.
+- Los buckets `mlops-p2-dvc-cache` y `mlops-p2-dataset-releases` existen en AWS.
