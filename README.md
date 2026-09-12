@@ -692,9 +692,19 @@ implementen la lógica de cada tier.
 
 `app/pyproject.toml` fija `requires-python = "==3.12.*"` y `app/Dockerfile`
 usa `python:3.12-slim` — misma versión en ambos lados. Las dependencias
-quedan pineadas en `app/requirements.txt` (generado con `pip freeze` dentro
-de un contenedor `python:3.12-slim`, no a mano), que es lo que instala el
-`Dockerfile`.
+quedan resueltas y pineadas en `app/uv.lock` (generado con `uv lock`, no a
+mano); el `Dockerfile` instala desde ese lockfile con
+`uv sync --locked`, así que build local y build en CI siempre resuelven
+exactamente las mismas versiones.
+
+Para trabajar en `app/` localmente con [uv](https://docs.astral.sh/uv/):
+
+```bash
+cd app
+uv sync            # crea .venv con dependencias + grupo dev (ruff, pytest)
+uv run pytest -q
+uv run ruff check .
+```
 
 ### Supuestos de este frente pendientes de confirmar con Karen/Heri
 
