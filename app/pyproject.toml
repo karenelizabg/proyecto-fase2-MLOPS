@@ -1,0 +1,34 @@
+[project]
+name = "dataset-quality-pipeline"
+version = "0.1.0"
+description = "Pipeline de calidad de dataset (Fase 2): ingesta, analizadores, compuerta, splits y versionado."
+requires-python = "==3.12.*"
+dependencies = [
+    "pydantic>=2.9,<3",
+    "pyyaml>=6.0,<7",
+    "sqlalchemy>=2.0,<3",
+    "pymysql>=1.1,<2",
+    "boto3>=1.35,<2",
+    "minio>=7.2,<8",
+    "pillow>=10.4,<11",
+    "imagehash>=4.3,<5",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7,<1",
+    "pytest>=8.3,<9",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["ingestion", "analyzers", "policies", "splits", "storage", "presentation", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ingestion", "analyzers", "policies", "splits", "storage", "presentation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

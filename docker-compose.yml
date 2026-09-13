@@ -63,6 +63,23 @@ services:
     ports:
       - "8080:80"
 
+  app:
+    build: ./app
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      DATABASE_URL: mysql+pymysql://root:password@mariadb:3306/image_repo
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?Define MINIO_ROOT_USER en .env}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Define MINIO_ROOT_PASSWORD en .env}
+      MINIO_BUCKET: image-annotations
+    restart: on-failure:5
+
 volumes:
   mariadb_data:
   minio_data:
