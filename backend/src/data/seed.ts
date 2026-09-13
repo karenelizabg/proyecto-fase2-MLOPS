@@ -17,6 +17,7 @@ const seedCategories = [
   { name: 'person', color: '#FF5733' },
   { name: 'car', color: '#3498DB' },
   { name: 'dog', color: '#2ECC71' },
+  { name: 'cat', color: '#9B59B6' },
 ] as const;
 
 /**
