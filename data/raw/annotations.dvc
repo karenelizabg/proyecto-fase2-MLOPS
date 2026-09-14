@@ -1,0 +1,6 @@
+outs:
+- md5: 30972cbd0f3380b88772e707cd6dcf5e.dir
+  size: 26561
+  nfiles: 1
+  hash: md5
+  path: annotations
