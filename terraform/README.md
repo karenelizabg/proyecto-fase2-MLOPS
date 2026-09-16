@@ -7,8 +7,8 @@ Código de infraestructura AWS, sin despliegue. Los roots `environments/dev` y
 |---|---|
 | `network` | VPC y dos subredes sin IP pública ni rutas a Internet. RDS requiere dos zonas. |
 | `compute` | Una EC2 `t3.micro`, disco cifrado, IMDSv2 y security group sin entrada pública. |
-| `data` | Una RDS MariaDB `db.t3.micro`, 20 GiB cifrados y acceso solo desde compute. RDS administra la contraseña en Secrets Manager. |
-| `storage` | Un bucket de artefactos con nombre generado, cifrado SSE-S3 y acceso público bloqueado. |
+| `data` | Una RDS MariaDB `db.t3.micro`, 20 GiB cifrados, backups retenidos 7 días y acceso solo desde compute. RDS administra la contraseña en Secrets Manager. |
+| `storage` | Un bucket de artefactos y otro para sus access logs, con nombres generados, cifrado SSE-S3, bloqueo de acceso público y políticas HTTPS-only. |
 
 Cada entorno tiene su propia configuración, etiquetas, nombres y estado local
 por directorio. Dev usa `10.10.0.0/16`; prod, `10.20.0.0/16`. Ambos usan por defecto
@@ -19,6 +19,16 @@ Los buckets se generarían con prefijos `mlops-p2-dev-artifacts-` y
 `mlops-p2-prod-artifacts-`. Son independientes de `mlops-p2-dvc-cache` y
 `mlops-p2-dataset-releases`: no se referencian, importan ni modifican esos recursos.
 Tampoco se cambian DVC, MinIO, Docker Compose, el portal o el pipeline Python.
+
+Los access logs se entregan al bucket independiente `${name}-access-logs-...`,
+en el prefijo `access-logs/`. Su policy permite únicamente `s3:PutObject` al
+servicio `logging.s3.amazonaws.com`, restringido al ARN del bucket origen y a
+la cuenta resuelta mediante `aws_caller_identity`, sin identificadores hardcodeados.
+Ambos buckets deniegan acciones S3 sobre el bucket y sus objetos cuando
+`aws:SecureTransport` es `false`; esa denegación no concede acceso público.
+El receptor no genera access logs hacia sí mismo ni hacia el origen, evitando
+recursión según las [recomendaciones de AWS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ServerLogs.html).
+No se agregan supresiones de análisis ni se modifican los buckets de P2-04.
 
 ## Validación
 
