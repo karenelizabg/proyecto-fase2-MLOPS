@@ -63,7 +63,7 @@ Referencia: [terraform validate](https://developer.hashicorp.com/terraform/cli/c
 ## Límites del ticket
 
 No ejecutar `apply` ni importar recursos existentes como parte de P2-06.
-No hay workflows, GitHub OIDC (P2-07), VPC Gateway Endpoint (P2-15), NAT,
+P2-06 no incluye workflows ni GitHub OIDC (ver P2-07 abajo), VPC Gateway Endpoint (P2-15), NAT,
 Internet Gateway, balanceadores, instalación de aplicaciones ni migración de datos.
 En particular, la EC2 no tiene conectividad a S3 o Internet ni un mecanismo de
 administración remota: la integración operativa corresponde a trabajos posteriores.
@@ -78,3 +78,62 @@ Los archivos `terraform.tfvars.example` contienen solo parámetros no sensibles.
 No incluyas perfiles personales, access keys, contraseñas o tokens en Terraform.
 El provider no fija una identidad: cualquier futura autenticación se resolvería
 fuera del código. Los estados, planes y variables locales están ignorados.
+
+## P2-07 — GitHub Actions con OIDC
+
+El root independiente `bootstrap/github-oidc` define un IAM OIDC provider para
+`https://token.actions.githubusercontent.com`, audience `sts.amazonaws.com`, y
+el rol `mlops-p2-github-oidc`. No depende de los módulos de P2-06 ni los despliega.
+No se adjuntan políticas de acceso a recursos al rol: este ticket comprueba solo
+autenticación. `sts:GetCallerIdentity` no necesita permisos adicionales.
+
+La trust policy permite `sts:AssumeRoleWithWebIdentity` exclusivamente con
+`aud = sts.amazonaws.com` y
+`sub = repo:karenelizabg/proyecto-fase2-MLOPS:ref:refs/heads/main`.
+No permite otros repositorios, ramas, tags, pull requests ni subjects de GitHub
+Environments. El job OIDC no declara `environment` para conservar ese subject.
+
+### Validación estática y prueba real
+
+El workflow `.github/workflows/terraform-oidc.yml` valida los tres roots en PRs
+hacia `main`, pushes a `main` y ejecuciones manuales. El job de validación solo
+tiene `contents: read`; no intenta asumir un rol ni necesita credenciales AWS.
+Las Actions están fijadas a commits verificados de sus repositorios oficiales.
+
+Además de los comandos de P2-06, valida el nuevo root con:
+
+```bash
+terraform -chdir=terraform fmt -recursive
+terraform -chdir=terraform fmt -check -recursive
+terraform -chdir=terraform/bootstrap/github-oidc init -backend=false
+terraform -chdir=terraform/bootstrap/github-oidc validate
+```
+
+El job OIDC depende de la validación y solo corre en el repositorio exacto, desde
+`main`, por push o ejecución manual. Tiene `contents: read` e `id-token: write`,
+utiliza `aws-actions/configure-aws-credentials` con
+`role-to-assume: ${{ vars.AWS_ROLE_ARN }}` y una sesión de 15 minutos. La prueba
+STS descarta su salida y no imprime identificadores de identidad.
+
+La validación del código no demuestra una autenticación real. Esta última queda
+pendiente hasta que una persona autorizada cree el provider/rol fuera de esta
+tarea y registre el output `role_arn` como variable de repositorio `AWS_ROLE_ARN`
+en GitHub. El ARN no es una credencial y no necesita escribirse en los archivos.
+Sin la variable o sin el rol real, el job OIDC en `main` falla explícitamente;
+los PRs no ejecutan ese job y no fallan por falta de autorización de su rama.
+
+### Provider existente y seguridad
+
+Antes de una futura creación, comprueba si la cuenta ya tiene el provider GitHub.
+Si existe, suministra su ARN mediante `TF_VAR_existing_oidc_provider_arn` o un
+archivo de variables local ignorado. Verifica que pertenece a la cuenta destino
+y que tiene la URL y audience indicadas. En ese modo Terraform no crea, importa
+ni modifica ese provider; únicamente lo referencia en la trust policy del rol.
+No cambies entre modos sobre un estado que ya gestione el provider sin revisar
+su ciclo de vida: podría proponer eliminarlo. No se hace esa transición aquí.
+
+La creación inicial requiere una identidad humana autorizada externa al proyecto;
+el workflow no puede crear su propio rol de arranque. No se guardan perfiles
+personales, credenciales estáticas, tokens ni identificadores de cuenta en código.
+No se ejecutan `plan`, `apply` ni importaciones como parte de esta implementación.
+No se agregan permisos S3, EC2, RDS, IAM o Secrets Manager, ni recursos de P2-15.
