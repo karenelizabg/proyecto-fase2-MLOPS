@@ -186,3 +186,45 @@ cubrían el camino "todo pasa" o "algo `fail` no pasa"):
   mockeado (mismo patrón que `test_main_returns_nonzero_exit_code_when_failed`,
   sin tocar `policies/quality.yaml` real ni repetir I/O), `main()` devuelve
   `0` cuando `status="warning"`.
+
+## P2-34 — Copilot MVP: servidor MCP de solo lectura (`mcp_server.py`)
+
+`mcp_server.py` usa el SDK oficial `mcp` (`modelcontextprotocol/python-sdk`,
+`MCPServer`/`ToolAnnotations` — la API se renombró de `FastMCP` a
+`MCPServer` en la versión 2.x instalada aquí). Expone 5 herramientas de
+solo lectura para que el futuro agente del Copilot consulte el dataset y
+sus resultados de calidad, sin poder modificar nada:
+
+| Herramienta | Qué devuelve |
+|---|---|
+| `get_dataset_summary` | Total de imágenes/anotaciones y conteo por categoría, calculado desde `data/raw/annotations/` real (vía `ingestion.loader`, igual que el gate). |
+| `get_quality_report` | El `quality.json` real que escribió `gate.py` — `{"available": false, "reason": ...}` si el gate no ha corrido todavía. |
+| `get_check_result` | Un check específico por nombre; `{"available": false, ...}` si no existe ese check o el reporte no existe. |
+| `get_splits_report` | `splits.json`, si ya existe (no lo produce ningún tier todavía). |
+| `get_versions_report` | `versions.json`, si ya existe (tampoco existe todavía). |
+
+`splits`/`versions` devuelven `available: false` en vez de inventar datos
+o fallar — mismo principio que ya usa el frontend
+(`frontend/src/pipeline/dataSource.ts`) para los mismos dos contratos.
+
+**Solo lectura, verificado en dos niveles:**
+1. Cada herramienta declara `ToolAnnotations(read_only_hint=True,
+   destructive_hint=False, ...)` — metadato del protocolo MCP mismo, no
+   solo un comentario.
+2. Ningún handler importa `storage.db` ni `storage.object_store` (el único
+   tier autorizado a tocar MariaDB/MinIO); `tests/test_mcp_server.py`
+   verifica ambas cosas, más un grep del código fuente contra los verbos
+   SQL de escritura y `put_object`.
+
+Desde `app/`:
+
+```bash
+uv run pytest tests/test_mcp_server.py
+DATABASE_URL=... MINIO_ENDPOINT=... MINIO_PORT=... MINIO_ACCESS_KEY=... \
+MINIO_SECRET_KEY=... MINIO_BUCKET=... DATASET_DIR=../data/raw REPORTS_DIR=../.reports \
+uv run python -m presentation.mcp_server   # stdio, para un cliente MCP local
+```
+
+No se agregó ningún servicio nuevo a `docker-compose.yml`: el agente del
+Copilot que consumiría este servidor todavía no existe (es trabajo de un
+ticket posterior), así que por ahora se invoca manualmente vía stdio.
