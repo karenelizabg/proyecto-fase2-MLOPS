@@ -92,7 +92,13 @@ resource "aws_s3_bucket_policy" "logs" {
         Action    = "s3:PutObject"
         Resource  = "${aws_s3_bucket.logs.arn}/access-logs/*"
         Condition = {
-          ArnEquals    = { "aws:SourceArn" = aws_s3_bucket.this.arn }
+          ArnEquals = {
+            "aws:SourceArn" = [
+              aws_s3_bucket.this.arn,
+              aws_s3_bucket.dvc_cache.arn,
+              aws_s3_bucket.dataset_releases.arn,
+            ]
+          }
           StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
         }
       },
@@ -112,6 +118,134 @@ resource "aws_s3_bucket_logging" "this" {
   bucket        = aws_s3_bucket.this.id
   target_bucket = aws_s3_bucket.logs.id
   target_prefix = "access-logs/"
+
+  depends_on = [
+    aws_s3_bucket_policy.logs,
+    aws_s3_bucket_public_access_block.logs,
+    aws_s3_bucket_server_side_encryption_configuration.logs,
+  ]
+}
+
+# P2-15: dataset buckets with versioning enabled, so an overwritten or
+# deleted object can be recovered. Independent resources from "this" above
+# (P2-06's artifacts bucket) — same security baseline (encryption, no
+# public access, HTTPS-only, access logs delivered to the same "logs"
+# bucket as "this", under their own prefix).
+
+resource "aws_s3_bucket" "dvc_cache" {
+  bucket_prefix = "${var.name}-dvc-cache-"
+  force_destroy = false
+
+  tags = { Name = "${var.name}-dvc-cache" }
+}
+
+resource "aws_s3_bucket_versioning" "dvc_cache" {
+  bucket = aws_s3_bucket.dvc_cache.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "dvc_cache" {
+  bucket = aws_s3_bucket.dvc_cache.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "dvc_cache" {
+  bucket = aws_s3_bucket.dvc_cache.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "dvc_cache" {
+  bucket = aws_s3_bucket.dvc_cache.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyInsecureTransport"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource  = [aws_s3_bucket.dvc_cache.arn, "${aws_s3_bucket.dvc_cache.arn}/*"]
+      Condition = { Bool = { "aws:SecureTransport" = "false" } }
+    }]
+  })
+}
+
+resource "aws_s3_bucket_logging" "dvc_cache" {
+  bucket        = aws_s3_bucket.dvc_cache.id
+  target_bucket = aws_s3_bucket.logs.id
+  target_prefix = "access-logs/dvc-cache/"
+
+  depends_on = [
+    aws_s3_bucket_policy.logs,
+    aws_s3_bucket_public_access_block.logs,
+    aws_s3_bucket_server_side_encryption_configuration.logs,
+  ]
+}
+
+resource "aws_s3_bucket" "dataset_releases" {
+  bucket_prefix = "${var.name}-dataset-releases-"
+  force_destroy = false
+
+  tags = { Name = "${var.name}-dataset-releases" }
+}
+
+resource "aws_s3_bucket_versioning" "dataset_releases" {
+  bucket = aws_s3_bucket.dataset_releases.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "dataset_releases" {
+  bucket = aws_s3_bucket.dataset_releases.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "dataset_releases" {
+  bucket = aws_s3_bucket.dataset_releases.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "dataset_releases" {
+  bucket = aws_s3_bucket.dataset_releases.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyInsecureTransport"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource  = [aws_s3_bucket.dataset_releases.arn, "${aws_s3_bucket.dataset_releases.arn}/*"]
+      Condition = { Bool = { "aws:SecureTransport" = "false" } }
+    }]
+  })
+}
+
+resource "aws_s3_bucket_logging" "dataset_releases" {
+  bucket        = aws_s3_bucket.dataset_releases.id
+  target_bucket = aws_s3_bucket.logs.id
+  target_prefix = "access-logs/dataset-releases/"
 
   depends_on = [
     aws_s3_bucket_policy.logs,

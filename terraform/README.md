@@ -137,3 +137,31 @@ el workflow no puede crear su propio rol de arranque. No se guardan perfiles
 personales, credenciales estáticas, tokens ni identificadores de cuenta en código.
 No se ejecutan `plan`, `apply` ni importaciones como parte de esta implementación.
 No se agregan permisos S3, EC2, RDS, IAM o Secrets Manager, ni recursos de P2-15.
+
+## P2-15 — Buckets S3 versionados + VPC Gateway Endpoint
+
+Extiende los módulos `storage` y `network` de P2-06; no agrega un root nuevo,
+por lo que ya queda cubierto por la validación existente (`environments/dev`
+y `environments/prod` consumen ambos módulos).
+
+`modules/storage` agrega dos buckets independientes de `this`
+(el bucket de artefactos de P2-06): `dvc_cache` y `dataset_releases`, con
+`aws_s3_bucket_versioning` habilitado y el mismo baseline de seguridad que
+ya usa el módulo (bloqueo de acceso público, cifrado SSE-S3, deny
+HTTPS-only, access logs entregados al mismo bucket `logs` de P2-06, cada
+uno bajo su propio prefijo `access-logs/dvc-cache/` y
+`access-logs/dataset-releases/`). La policy de `logs` se amplió para
+permitir la entrega de logs desde estos dos buckets además de `this`.
+Igual que en P2-06, los nombres se generan con `bucket_prefix` (p. ej.
+`mlops-p2-dev-dvc-cache-<sufijo>`): son independientes de
+`mlops-p2-dvc-cache` y `mlops-p2-dataset-releases` (los buckets reales de
+P2-04); no se referencian, importan ni modifican.
+
+`modules/network` agrega un `aws_vpc_endpoint` tipo Gateway para S3,
+asociado a la route table por defecto de la VPC — la única que existe,
+porque P2-06 no crea route tables propias (las subredes no tienen rutas
+públicas). El nombre del servicio se resuelve con `data "aws_region"
+"current"`, sin región hardcodeada.
+
+No se ejecuta `apply` ni se modifica ningún recurso real de AWS como parte
+de este ticket, igual que P2-06 y P2-07.
