@@ -9,3 +9,9 @@
 
 # Credenciales específicas de DVC; nunca se comparten con Git.
 .dvc/config.local
+
+# Terraform local artifacts at any depth; provider lockfiles remain versioned.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
