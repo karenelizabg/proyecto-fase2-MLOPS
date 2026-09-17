@@ -144,15 +144,18 @@ Extiende los módulos `storage` y `network` de P2-06; no agrega un root nuevo,
 por lo que ya queda cubierto por la validación existente (`environments/dev`
 y `environments/prod` consumen ambos módulos).
 
-`modules/storage` agrega dos buckets independientes de `this`/`logs`
-(el par artefactos/access-logs de P2-06): uno por cada propósito en
-`dvc-cache` y `dataset-releases`, con `aws_s3_bucket_versioning` habilitado
-y el mismo baseline de seguridad que ya usa el módulo (bloqueo de acceso
-público, cifrado SSE-S3, deny HTTPS-only). No entregan sus propios access
-logs; eso no lo pide este ticket. Igual que en P2-06, los nombres se generan
-con `bucket_prefix` (p. ej. `mlops-p2-dev-dvc-cache-<sufijo>`): son
-independientes de `mlops-p2-dvc-cache` y `mlops-p2-dataset-releases`
-(los buckets reales de P2-04); no se referencian, importan ni modifican.
+`modules/storage` agrega dos buckets independientes de `this`
+(el bucket de artefactos de P2-06): `dvc_cache` y `dataset_releases`, con
+`aws_s3_bucket_versioning` habilitado y el mismo baseline de seguridad que
+ya usa el módulo (bloqueo de acceso público, cifrado SSE-S3, deny
+HTTPS-only, access logs entregados al mismo bucket `logs` de P2-06, cada
+uno bajo su propio prefijo `access-logs/dvc-cache/` y
+`access-logs/dataset-releases/`). La policy de `logs` se amplió para
+permitir la entrega de logs desde estos dos buckets además de `this`.
+Igual que en P2-06, los nombres se generan con `bucket_prefix` (p. ej.
+`mlops-p2-dev-dvc-cache-<sufijo>`): son independientes de
+`mlops-p2-dvc-cache` y `mlops-p2-dataset-releases` (los buckets reales de
+P2-04); no se referencian, importan ni modifican.
 
 `modules/network` agrega un `aws_vpc_endpoint` tipo Gateway para S3,
 asociado a la route table por defecto de la VPC — la única que existe,

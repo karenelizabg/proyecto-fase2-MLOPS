@@ -3,5 +3,8 @@ output "bucket_name" {
 }
 
 output "dvc_bucket_names" {
-  value = { for purpose, bucket in aws_s3_bucket.dvc : purpose => bucket.id }
+  value = {
+    dvc-cache        = aws_s3_bucket.dvc_cache.id
+    dataset-releases = aws_s3_bucket.dataset_releases.id
+  }
 }
