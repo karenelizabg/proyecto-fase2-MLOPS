@@ -3,6 +3,7 @@ import time
 
 from sqlalchemy import text
 
+from presentation import gate
 from storage.db import get_engine
 from storage.object_store import get_bucket_name, get_minio_client
 
@@ -32,10 +33,18 @@ def _wait_for_dependencies(retries: int = 10, delay_seconds: float = 3.0) -> Non
 
 
 def main() -> None:
-    logger.info("dataset-quality-pipeline: esqueleto del frente 1 (arquitectura y entorno).")
+    logger.info("dataset-quality-pipeline: arrancando.")
     _wait_for_dependencies()
-    logger.info("Listo. Los tiers 1-5 (ingesta, analizadores, compuerta, splits, versionado) "
-                "se implementan en los frentes correspondientes.")
+
+    try:
+        gate.run()
+    except Exception:  # noqa: BLE001 - un quality.json roto no debe tumbar el contenedor
+        logger.exception(
+            "La compuerta de calidad no pudo correr al arrancar; "
+            "el contenedor sigue vivo, reintenta con `python -m presentation.gate`."
+        )
+
+    logger.info("Listo. Splits y versionado (tiers 4-5) se implementan en frentes posteriores.")
 
     while True:
         time.sleep(3600)

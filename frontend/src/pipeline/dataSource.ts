@@ -1,31 +1,25 @@
-import qualityExample from "./examples/quality.json";
-import splitsExample from "./examples/splits.json";
-import versionsExample from "./examples/versions.json";
-import {
-  type QualityReport,
-  qualityReportSchema,
-  type SplitsReport,
-  splitsReportSchema,
-  type VersionsReport,
-  versionsReportSchema,
-} from "./schemas";
+import { qualityReportSchema, splitsReportSchema, versionsReportSchema } from "./schemas";
+import { useReportFetch } from "./useReportFetch";
 
 /**
- * P2-14: fuente de datos de las 6 pantallas del pipeline. Hoy lee los
- * ejemplos congelados por P2-12 (`app/presentation/examples/`, copiados a
- * `./examples/` porque el build de Docker del frontend solo tiene acceso a
- * `frontend/`, no a `app/`). P2-24 reemplaza el cuerpo de estas tres
- * funciones por `fetch` contra el backend real; las pantallas no cambian.
+ * P2-22/23/24: fuente de datos real de las 6 pantallas del pipeline — lee
+ * los reportes que escribe `app/presentation/gate.py` (ver
+ * docker-compose.yml). Reemplaza los ejemplos estáticos de P2-14.
+ *
+ * `quality.json` lo escribe el gate en cada arranque de `app`. `splits.json`
+ * y `versions.json` todavía no los produce nada (splits/versionado son
+ * tiers futuros) — sus hooks devuelven `status: "error"` honesto (404) en
+ * vez de datos inventados; cada pantalla decide cómo mostrarlo.
  */
 
-export function getQualityReport(): QualityReport {
-  return qualityReportSchema.parse(qualityExample);
+export function useQualityReport() {
+  return useReportFetch("/reports/quality.json", qualityReportSchema);
 }
 
-export function getSplitsReport(): SplitsReport {
-  return splitsReportSchema.parse(splitsExample);
+export function useSplitsReport() {
+  return useReportFetch("/reports/splits.json", splitsReportSchema);
 }
 
-export function getVersionsReport(): VersionsReport {
-  return versionsReportSchema.parse(versionsExample);
+export function useVersionsReport() {
+  return useReportFetch("/reports/versions.json", versionsReportSchema);
 }

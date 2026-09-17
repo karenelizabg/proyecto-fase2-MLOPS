@@ -60,6 +60,19 @@ class CocoDataset(CocoModel):
     categories: list[Category] = Field(min_length=1)
 
     @model_validator(mode="after")
+    def ids_are_unique(self) -> Self:
+        for label, items in (
+            ("images", self.images),
+            ("annotations", self.annotations),
+            ("categories", self.categories),
+        ):
+            ids = [item.id for item in items]
+            if len(ids) != len(set(ids)):
+                duplicates = sorted({item_id for item_id in ids if ids.count(item_id) > 1})
+                raise ValueError(f"{label} tiene ids repetidos: {duplicates}")
+        return self
+
+    @model_validator(mode="after")
     def annotations_reference_declared_ids(self) -> Self:
         image_ids = {image.id for image in self.images}
         category_ids = {category.id for category in self.categories}
