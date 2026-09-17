@@ -4,11 +4,11 @@ export function PageHeader({
   title,
   subtitle,
   children,
-}: {
+}: Readonly<{
   title: string;
   subtitle: string;
   children?: ReactNode;
-}) {
+}>) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>

@@ -9,6 +9,12 @@ const SPLIT_LABELS: Record<keyof SplitsReport["splits"], string> = {
   test: "Test",
 };
 
+const SPLIT_ACCENTS: Record<keyof SplitsReport["splits"], "lilac" | "blue" | "mint"> = {
+  train: "lilac",
+  validation: "blue",
+  test: "mint",
+};
+
 export function SplitsPage() {
   const splits = getSplitsReport();
 
@@ -28,7 +34,7 @@ export function SplitsPage() {
                 key={key}
                 label={`${SPLIT_LABELS[key]} (${Math.round(summary.ratio * 100)}%)`}
                 value={summary.image_count}
-                accent={key === "train" ? "lilac" : key === "validation" ? "blue" : "mint"}
+                accent={SPLIT_ACCENTS[key]}
               />
             );
           })}
