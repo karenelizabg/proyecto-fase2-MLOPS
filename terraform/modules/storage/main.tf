@@ -119,3 +119,71 @@ resource "aws_s3_bucket_logging" "this" {
     aws_s3_bucket_server_side_encryption_configuration.logs,
   ]
 }
+
+# P2-15: dataset buckets with versioning enabled, so an overwritten or
+# deleted object can be recovered. Independent resources from "this"/"logs"
+# above (P2-06's artifacts/access-logs pair) — same security baseline
+# (encryption, no public access, HTTPS-only), no access-log delivery of
+# their own, since that wasn't asked for by this ticket.
+locals {
+  dvc_bucket_purposes = ["dvc-cache", "dataset-releases"]
+}
+
+resource "aws_s3_bucket" "dvc" {
+  for_each = toset(local.dvc_bucket_purposes)
+
+  bucket_prefix = "${var.name}-${each.key}-"
+  force_destroy = false
+
+  tags = { Name = "${var.name}-${each.key}" }
+}
+
+resource "aws_s3_bucket_versioning" "dvc" {
+  for_each = aws_s3_bucket.dvc
+
+  bucket = each.value.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "dvc" {
+  for_each = aws_s3_bucket.dvc
+
+  bucket = each.value.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "dvc" {
+  for_each = aws_s3_bucket.dvc
+
+  bucket = each.value.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "dvc" {
+  for_each = aws_s3_bucket.dvc
+
+  bucket = each.value.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyInsecureTransport"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource  = [each.value.arn, "${each.value.arn}/*"]
+      Condition = { Bool = { "aws:SecureTransport" = "false" } }
+    }]
+  })
+}

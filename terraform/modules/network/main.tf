@@ -26,3 +26,19 @@ resource "aws_subnet" "this" {
 
   tags = { Name = "${var.name}-${count.index + 1}" }
 }
+
+# Resolved by AWS only during a future execution; no region is hardcoded.
+data "aws_region" "current" {}
+
+# P2-15: Gateway endpoint so traffic to S3 (the DVC buckets in modules/storage)
+# never leaves through a NAT/Internet gateway. Neither exists in this module
+# (see comment above: no public routes), so this only affects the VPC's
+# default route table, which is what the subnets use implicitly.
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.this.id
+  service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_vpc.this.default_route_table_id]
+
+  tags = { Name = "${var.name}-s3-gateway-endpoint" }
+}
