@@ -16,6 +16,15 @@ un `KeyError`/`IndexError`):
 - `annotations[].image_id` que no aparece en `images` (huérfana).
 - Cualquier campo extra no declarado (`extra="forbid"`), tipos no exactos
   (`strict=True`) o `NaN`/`Infinity` (`allow_inf_nan=False`).
+- `images[].id`, `annotations[].id` o `categories[].id` repetidos dentro
+  del dataset (P2-22/23/24: el bug real que motivó esto — dos lotes
+  anotados por separado reutilizaron los mismos ids — ver
+  `ingestion/loader.py`).
+
+`ingestion/loader.py` (P2-22/23/24) es quien junta los
+`annotations-lote-*.json` de `data/raw/annotations/` en un solo
+`CocoDataset`: como valida el resultado combinado, un choque de ids entre
+dos lotes distintos se rechaza ahí mismo, no río abajo en los analizadores.
 
 `policies/models.py` (`QualityPolicy`) y `storage/settings.py` (`Settings`)
 siguen el mismo principio para `quality.yaml` y las variables de entorno:

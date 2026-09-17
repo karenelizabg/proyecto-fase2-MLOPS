@@ -1,0 +1,143 @@
+"""Tier 3 — la compuerta de calidad end-to-end (P2-22/23/24).
+
+Corre los 4 analizadores existentes contra el dataset real, arma el
+`QualityReport` (contrato v1.0 de P2-12) y lo escribe a disco. Si algún
+check con `action: fail` no pasa, `main()` devuelve 1 — pensado para
+encadenarse como paso previo obligatorio de la siguiente etapa del
+pipeline (`<comando del gate>; echo "exit=$?"` debe imprimir un código
+distinto de 0).
+
+`cross_split_leakage` no se incluye todavía: requiere splits reales, que
+no existen hasta que se implemente el algoritmo de splits (Tier 4). No se
+inventa ese dato — el reporte solo declara los 5 checks que sí se pueden
+evaluar hoy contra el dataset real.
+"""
+
+import logging
+import sys
+from pathlib import Path
+
+from analyzers.duplicates import analyze_duplicates
+from analyzers.imbalance import analyze_imbalance
+from analyzers.invalid_boxes import analyze_invalid_boxes
+from analyzers.small_objects import analyze_small_objects
+from ingestion.loader import load_dataset
+from ingestion.models import CocoDataset
+from policies.duplicates import load_duplicate_config
+from policies.imbalance import load_imbalance_config
+from policies.invalid_boxes import load_invalid_box_config
+from policies.models import QualityPolicy
+from policies.small_objects import load_small_object_config
+from presentation.contracts import QualityCheck, QualityReport
+from storage.settings import Settings
+
+logger = logging.getLogger("quality-gate")
+
+
+def _load_image_bytes(coco: CocoDataset, images_dir: Path) -> dict[int, bytes]:
+    return {image.id: (images_dir / image.file_name).read_bytes() for image in coco.images}
+
+
+def _min_images_per_class_check(imbalance_result, policy: QualityPolicy) -> QualityCheck:
+    """`min_images_per_class` no es su propio analizador (ver imbalance.py);
+    se deriva de `details.classes_below_minimum`, que ya usa ese umbral."""
+    classes_below = imbalance_result.details["classes_below_minimum"]
+    counts = [c["image_count"] for c in imbalance_result.details["images_per_category"]]
+    return QualityCheck(
+        check_name="min_images_per_class",
+        passed=len(classes_below) == 0,
+        metric_value=float(min(counts, default=0)),
+        details={"classes_below_minimum": classes_below},
+        action=policy.min_images_per_class.action,
+    )
+
+
+def build_quality_report(
+    *,
+    dataset_dir: Path,
+    policy: QualityPolicy,
+    dataset_version: str,
+    policy_path: Path | None = None,
+) -> QualityReport:
+    """`policy` decide acción/umbral por check en el reporte; `policy_path`
+    es la ruta de `quality.yaml` que usan los `load_*_config()` para armar
+    la config propia de cada analizador (`None` = su default, relativo a
+    `policies/models.py`, no a `dataset_dir` — deben apuntar al mismo
+    archivo que produjo `policy`, así que solo se sobreescribe en tests)."""
+    coco = load_dataset(dataset_dir / "annotations")
+    coco_dict = coco.model_dump()
+    images_dir = dataset_dir / "images"
+
+    imbalance_result = analyze_imbalance(coco_dict, load_imbalance_config(policy_path))
+    small_objects_result = analyze_small_objects(coco_dict, load_small_object_config(policy_path))
+    invalid_boxes_result = analyze_invalid_boxes(coco_dict, load_invalid_box_config(policy_path))
+    duplicates_result = analyze_duplicates(
+        _load_image_bytes(coco, images_dir), load_duplicate_config(policy_path)
+    )
+
+    checks = [
+        _min_images_per_class_check(imbalance_result, policy),
+        QualityCheck(**imbalance_result.model_dump(), action=policy.max_imbalance_ratio.action),
+        QualityCheck(
+            **small_objects_result.model_dump(), action=policy.max_small_object_ratio.action
+        ),
+        QualityCheck(**invalid_boxes_result.model_dump(), action=policy.degenerate_boxes.action),
+        # analyze_duplicates() usa "duplicate_images" como check_name interno
+        # (ver app/tests/test_duplicates.py); en el reporte se renombra al
+        # nombre de la política que en verdad evalúa, sin tocar el analizador.
+        QualityCheck(
+            **{**duplicates_result.model_dump(), "check_name": "duplicate_similarity_threshold"},
+            action=policy.duplicate_similarity_threshold.action,
+        ),
+    ]
+
+    if any(check.action == "fail" and not check.passed for check in checks):
+        status = "failed"
+    elif any(not check.passed for check in checks):
+        status = "warning"
+    else:
+        status = "passed"
+
+    return QualityReport(
+        schema_version="1.0",
+        dataset_version=dataset_version,
+        status=status,
+        checks=checks,
+    )
+
+
+def run(settings: Settings | None = None) -> QualityReport:
+    """Corre la compuerta y escribe `quality.json`; no decide el exit code (ver main())."""
+    settings = settings if settings is not None else Settings()
+    report = build_quality_report(
+        dataset_dir=settings.dataset_dir,
+        policy=settings.quality,
+        dataset_version=settings.dataset_version,
+    )
+
+    settings.reports_dir.mkdir(parents=True, exist_ok=True)
+    report_path = settings.reports_dir / "quality.json"
+    report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    logger.info("quality.json escrito en %s (status=%s).", report_path, report.status)
+
+    for check in report.checks:
+        outcome = "PASS" if check.passed else "FAIL"
+        logger.info("  %-32s %-4s action=%s", check.check_name, outcome, check.action)
+
+    return report
+
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    report = run()
+
+    if report.status == "failed":
+        logger.error("Compuerta de calidad BLOQUEADA: al menos un check fail no pasó.")
+        return 1
+
+    logger.info("Compuerta de calidad OK (status=%s).", report.status)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

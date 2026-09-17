@@ -112,3 +112,53 @@ P2-11 deberá aportar resultados y un resumen compatibles; este ticket no implem
 sus algoritmos. P2-14 deberá acordar con estos contratos la identificación de releases
 y ubicación de reportes. No se presupone su API: ambos tickets no están implementados
 en esta copia. Cualquier necesidad nueva debe discutirse antes de cambiar v1.0.
+
+## P2-22/23/24 — La compuerta de calidad end-to-end (`gate.py`)
+
+`gate.py` es el primer código que efectivamente corre el pipeline contra el
+dataset real: `ingestion/loader.py` junta los `annotations-lote-*.json` de
+`data/raw/annotations/` en un `CocoDataset` validado, corre los 4
+analizadores existentes (`imbalance`, `small_objects`, `invalid_boxes`,
+`duplicates`), arma un `QualityReport` real (no el ejemplo) y lo escribe en
+`REPORTS_DIR/quality.json`.
+
+- `min_images_per_class` no es su propio analizador (vive dentro de
+  `imbalance.py`, ver `details.classes_below_minimum`); el gate lo deriva
+  como check independiente porque `quality.yaml` le da una severidad
+  distinta (`fail`) a la de `max_imbalance_ratio` (`warn`).
+- `analyze_duplicates()` usa el check_name interno `duplicate_images`
+  (ver `analyzers/duplicates.py` y su test); el gate lo renombra a
+  `duplicate_similarity_threshold` en el reporte — el nombre de la política
+  que en verdad evalúa — sin tocar el analizador ya mergeado.
+- `cross_split_leakage` NO se incluye: requiere splits reales, que no
+  existen hasta que se implemente ese tier. El reporte solo declara los 5
+  checks que sí se pueden evaluar hoy; no se inventa ese dato.
+- `main()` devuelve `1` si algún check con `action: fail` no pasó — pensado
+  para encadenarse como dependencia dura de la siguiente etapa
+  (`python -m presentation.gate; echo "exit=$?"`).
+- `presentation/main.py` corre el gate una vez al arrancar el contenedor
+  `app` y sigue vivo aunque falle (loggea y continúa) — el contenedor es un
+  servicio de larga duración, el gate es un paso de pipeline con su propio
+  exit code; no se confunden.
+
+`DATASET_DIR`/`REPORTS_DIR` (ver `storage/settings.py`) apuntan a los
+volúmenes montados en `docker-compose.yml`, no a rutas calculadas desde
+`__file__`: el Dockerfile aplana `app/` a `/app`, así que una ruta relativa
+al código (`../../data/raw`) dejaría de tener sentido ahí. El frontend lee
+`REPORTS_DIR` como estático servido por nginx en `/reports/*.json`
+(volumen compartido `reports_data`, sin backend HTTP nuevo) — ver
+`frontend/docker/nginx.conf` y `frontend/src/pipeline/dataSource.ts`.
+
+Con el dataset real actual, la compuerta **bloquea de verdad**: `person`/
+`car` están sembrados como categorías pero nunca se han anotado (0
+imágenes cada una), así que `min_images_per_class` (umbral 300, severidad
+`fail`) nunca pasa mientras existan categorías declaradas sin imágenes.
+Esto no es un bug del gate — es el reflejo honesto de que el dataset
+todavía no cumple la meta M3 del curso.
+
+```bash
+uv run pytest tests/test_loader.py tests/test_gate.py
+DATABASE_URL=... MINIO_ENDPOINT=... MINIO_PORT=... MINIO_ACCESS_KEY=... \
+MINIO_SECRET_KEY=... MINIO_BUCKET=... DATASET_DIR=../data/raw REPORTS_DIR=/tmp/reports \
+uv run python -m presentation.gate
+```

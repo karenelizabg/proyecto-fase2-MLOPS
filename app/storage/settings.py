@@ -6,6 +6,12 @@ la compuerta de acoplamiento en `app/tests/test_architecture.py`).
 así que una variable de entorno faltante o un umbral roto en la política se
 rechazan aquí, con un error que nombra el campo, antes de que cualquier otro
 tier los use.
+
+`dataset_dir` (padre de `annotations/`/`images/`) y `reports_dir` (donde
+`presentation/gate.py` escribe `quality.json`) también viven aquí — dentro
+de Docker apuntan a los volúmenes montados (ver docker-compose.yml), no a
+rutas calculadas desde `__file__`, porque el Dockerfile aplana `app/` a
+`/app` y una ruta relativa al código dejaría de tener sentido ahí.
 """
 
 from pathlib import Path
@@ -52,6 +58,10 @@ class Settings(BaseSettings):
     minio_secret_key: str
     minio_use_ssl: bool = False
     minio_bucket: str
+
+    dataset_dir: Path
+    reports_dir: Path
+    dataset_version: str = "local-dev"
 
     quality: QualityPolicy
 

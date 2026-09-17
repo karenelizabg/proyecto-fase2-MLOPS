@@ -10,6 +10,8 @@ REQUIRED_ENV = {
     "MINIO_ACCESS_KEY": "ak",
     "MINIO_SECRET_KEY": "sk",
     "MINIO_BUCKET": "bucket",
+    "DATASET_DIR": "/data/raw",
+    "REPORTS_DIR": "/reports",
 }
 
 
