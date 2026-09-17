@@ -1,8 +1,7 @@
-import os
-
 from sqlalchemy import Engine, create_engine
+
+from storage.settings import Settings
 
 
 def get_engine() -> Engine:
-    database_url = os.environ["DATABASE_URL"]
-    return create_engine(database_url, pool_pre_ping=True)
+    return create_engine(Settings().database_url, pool_pre_ping=True)
