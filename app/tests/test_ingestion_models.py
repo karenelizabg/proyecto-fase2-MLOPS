@@ -59,15 +59,25 @@ def test_orphan_image_id_is_rejected_naming_image_id():
         CocoDataset.model_validate(document)
 
 
-def test_empty_images_or_categories_are_rejected():
+def test_no_images_is_rejected():
+    document = coco(images=[])
     with pytest.raises(ValidationError):
-        CocoDataset.model_validate(coco(images=[]))
-    with pytest.raises(ValidationError):
-        CocoDataset.model_validate(coco(categories=[]))
+        CocoDataset.model_validate(document)
 
 
-def test_extra_field_on_any_model_is_rejected():
+def test_no_categories_is_rejected():
+    document = coco(categories=[])
     with pytest.raises(ValidationError):
-        CocoDataset.model_validate({**coco(), "extra": "nope"})
+        CocoDataset.model_validate(document)
+
+
+def test_extra_field_on_dataset_is_rejected():
+    document = {**coco(), "extra": "nope"}
     with pytest.raises(ValidationError):
-        CocoDataset.model_validate(coco(annotations=[annotation(extra="nope")]))
+        CocoDataset.model_validate(document)
+
+
+def test_extra_field_on_annotation_is_rejected():
+    document = coco(annotations=[annotation(extra="nope")])
+    with pytest.raises(ValidationError):
+        CocoDataset.model_validate(document)
