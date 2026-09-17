@@ -13,8 +13,10 @@ max_imbalance_ratio:
   action: warn
 
 max_small_object_ratio:
-  # Proporción de cajas con lado menor a 32x32 px.
+  # Proporción máxima permitida; una caja pequeña tiene ambos lados bajo sus límites.
   threshold: 0.40
+  width_px: 32
+  height_px: 32
   action: warn
 
 degenerate_boxes:
