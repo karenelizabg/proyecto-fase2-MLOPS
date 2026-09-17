@@ -30,6 +30,6 @@ cross_split_leakage:
   action: fail
 
 duplicate_similarity_threshold:
-  # Distancia pHash a partir de la cual dos imágenes se consideran duplicadas.
+  # Similitud mínima pHash: 1 - distancia Hamming / bits del hash (inclusiva).
   threshold: 0.94
   action: warn
