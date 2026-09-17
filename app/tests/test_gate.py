@@ -29,6 +29,9 @@ cross_split_leakage:
 duplicate_similarity_threshold:
   threshold: 0.999
   action: warn
+min_spatial_dispersion:
+  threshold: 0.0
+  action: warn
 """
 
 
@@ -106,7 +109,7 @@ def _policy_path(tmp_path, min_images=2):
     return path
 
 
-def test_report_has_five_checks_not_six(tmp_path):
+def test_report_has_six_checks_not_seven(tmp_path):
     dataset_dir = _write_dataset(tmp_path / "dataset")
     policy_path = _policy_path(tmp_path)
     policy = load_quality_policy(policy_path)
@@ -125,6 +128,7 @@ def test_report_has_five_checks_not_six(tmp_path):
         "max_small_object_ratio",
         "degenerate_boxes",
         "duplicate_similarity_threshold",
+        "spatial_bias",
     }
     assert "cross_split_leakage" not in names
 
@@ -190,7 +194,7 @@ def test_run_writes_quality_json(tmp_path, monkeypatch):
     written = json.loads((reports_dir / "quality.json").read_text(encoding="utf-8"))
     assert written["schema_version"] == "1.0"
     assert written["status"] == report.status
-    assert len(written["checks"]) == 5
+    assert len(written["checks"]) == 6
 
 
 def test_main_returns_nonzero_exit_code_when_failed(tmp_path, monkeypatch):

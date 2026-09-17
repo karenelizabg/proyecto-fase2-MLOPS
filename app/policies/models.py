@@ -33,6 +33,7 @@ class QualityPolicy(PolicyModel):
     degenerate_boxes: ThresholdRule
     cross_split_leakage: ThresholdRule
     duplicate_similarity_threshold: ThresholdRule
+    min_spatial_dispersion: ThresholdRule
 
 
 def load_quality_policy(path: Path | None = None) -> QualityPolicy:

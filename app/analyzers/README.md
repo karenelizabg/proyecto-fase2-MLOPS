@@ -221,3 +221,51 @@ Desde `app/`: `python -m pytest tests/test_invalid_boxes.py`. El caso obligatori
 inyecta en un mismo documento bbox `[0, 0, -10, 10]` y `[95, 0, 10, 10]` para
 una imagen de 100×80: ambas se reportan, y las validaciones estrictas existentes
 siguen rechazando la primera.
+
+## P2-29 — Sesgo espacial
+
+`analyze_spatial_bias(coco, config)` en `analyzers/spatial_bias.py` recibe el
+COCO ya cargado y una `SpatialBiasConfig`, sin I/O ni mutación de la entrada.
+El ticket original no definía el algoritmo (a diferencia de sus hermanos
+P2-19/20/21); se confirmó con Andy la definición: centro normalizado de cada
+bbox (0-1 en cada eje, relativo a su imagen) y desviación estándar poblacional
+por eje. Baja dispersión ⇒ los anotadores centran sistemáticamente el objeto.
+
+```python
+from analyzers.spatial_bias import analyze_spatial_bias
+from policies.spatial_bias import load_spatial_bias_config
+
+result = analyze_spatial_bias(coco, load_spatial_bias_config())
+```
+
+`policies.spatial_bias.load_spatial_bias_config()` reutiliza
+`load_quality_policy()` y extrae `min_spatial_dispersion.threshold` (clave
+nueva en `quality.yaml`; no existía ninguna que mapeara a este check, a
+diferencia de los otros 4 analizadores). Una distribución uniforme en [0, 1]
+tiene desviación ≈0.289; el YAML fija el umbral en 0.15, bien por debajo de
+eso, para no exigir uniformidad perfecta.
+
+Salida:
+
+- `check_name`: `spatial_bias`.
+- `metric_value`: la **menor** de las desviaciones estándar de los dos ejes
+  (`std_center_x`, `std_center_y`) — el eje con menos dispersión es el que
+  marca el sesgo; no se promedian ambos ejes.
+- `passed`: `metric_value >= min_spatial_dispersion.threshold`. A diferencia
+  del resto de los checks (que exigen un máximo), este exige un **mínimo**
+  de dispersión — mismo patrón de nombre que `min_images_per_class`.
+- `details.total_boxes`, `mean_center_x`, `mean_center_y`, `std_center_x`,
+  `std_center_y`.
+
+Con 0 o 1 caja la dispersión es 0.0 por definición (no hay variación posible),
+lo que falla cualquier umbral positivo — no es un caso de error, es la
+respuesta correcta ("no hay suficiente evidencia de dispersión"). No se usa
+`area` ni tamaño de caja, solo la posición del centro; no se corrige por
+orientación de la imagen ni se pondera por categoría.
+
+Corrido contra el dataset real (`data/raw/`): `metric_value≈0.088`,
+`mean_center_x≈0.50`, `mean_center_y≈0.51` — el dataset (fotos de stock
+recortadas) sí centra sistemáticamente al animal; el check falla
+correctamente con `action: warn` (no bloquea, pero queda registrado).
+
+Desde `app/`: `python -m pytest tests/test_spatial_bias.py`.

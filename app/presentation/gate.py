@@ -9,7 +9,7 @@ distinto de 0).
 
 `cross_split_leakage` no se incluye todavía: requiere splits reales, que
 no existen hasta que se implemente el algoritmo de splits (Tier 4). No se
-inventa ese dato — el reporte solo declara los 5 checks que sí se pueden
+inventa ese dato — el reporte solo declara los 6 checks que sí se pueden
 evaluar hoy contra el dataset real.
 """
 
@@ -21,6 +21,7 @@ from analyzers.duplicates import analyze_duplicates
 from analyzers.imbalance import analyze_imbalance
 from analyzers.invalid_boxes import analyze_invalid_boxes
 from analyzers.small_objects import analyze_small_objects
+from analyzers.spatial_bias import analyze_spatial_bias
 from ingestion.loader import load_dataset
 from ingestion.models import CocoDataset
 from policies.duplicates import load_duplicate_config
@@ -28,6 +29,7 @@ from policies.imbalance import load_imbalance_config
 from policies.invalid_boxes import load_invalid_box_config
 from policies.models import QualityPolicy
 from policies.small_objects import load_small_object_config
+from policies.spatial_bias import load_spatial_bias_config
 from presentation.contracts import QualityCheck, QualityReport
 from storage.settings import Settings
 
@@ -74,6 +76,7 @@ def build_quality_report(
     duplicates_result = analyze_duplicates(
         _load_image_bytes(coco, images_dir), load_duplicate_config(policy_path)
     )
+    spatial_bias_result = analyze_spatial_bias(coco_dict, load_spatial_bias_config(policy_path))
 
     checks = [
         _min_images_per_class_check(imbalance_result, policy),
@@ -88,6 +91,9 @@ def build_quality_report(
         QualityCheck(
             **{**duplicates_result.model_dump(), "check_name": "duplicate_similarity_threshold"},
             action=policy.duplicate_similarity_threshold.action,
+        ),
+        QualityCheck(
+            **spatial_bias_result.model_dump(), action=policy.min_spatial_dispersion.action
         ),
     ]
 
