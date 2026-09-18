@@ -636,6 +636,54 @@ Antes de cerrar P2-04, verificar:
 - `.env` y `.dvc/config.local` permanecen fuera de Git.
 - Los buckets `mlops-p2-dvc-cache` y `mlops-p2-dataset-releases` existen en AWS.
 
+## P2-42 — Pipeline DVC completo (`dvc.yaml`)
+
+Hasta este ticket, el dataset se manejaba con `dvc add` suelto: reproducible
+como almacenamiento de archivos, pero sin un pipeline declarado con
+dependencias/salidas. `dvc.yaml` define un stage, `quality_gate`, que corre
+la compuerta de calidad real (`app/presentation/gate.py`) contra
+`data/raw/annotations` + `data/raw/images` y escribe `reports/quality.json`.
+
+```bash
+dvc repro
+```
+
+- **`app/dvc_gate_stage.py`** es un wrapper, no un cambio a `gate.py`: DVC
+  ejecuta `cmd` vía el shell del sistema operativo (`cmd.exe` en Windows),
+  que no soporta `VAR=valor comando` (sintaxis bash usada en los ejemplos
+  de `app/presentation/README.md`). El wrapper fija con `os.environ` los
+  mismos valores placeholder que `DATABASE_URL`/`MINIO_*` necesitan (campos
+  requeridos por `storage.Settings`, nunca usados por el gate) antes de
+  llamar a `gate.run()` — no a `gate.main()`, que si el dataset no pasa la
+  compuerta devuelve `exit 1` y rompería `dvc repro` para un estado
+  legítimo y esperado del dataset (ver `min_images_per_class` en la sección
+  de Frente 1 más abajo). `dvc repro` solo debe fallar si el cómputo en sí
+  falla, no si el reporte resultante dice `status: failed`.
+- **`reports/quality.json` es un `metrics`, no un `outs`**, con
+  `cache: false`: es un reporte chico y legible, pensado para diffs de PR y
+  `dvc metrics diff`, no un artefacto binario que amerite el object store
+  de DVC.
+- **`always_changed: true`**: en esta máquina (con `Documents` sincronizado
+  por OneDrive), el run-cache interno de DVC (`.dvc/cache/runs/`) falla con
+  `WinError 3` durante su propio `move()` de archivo temporal — no es un
+  bug de este stage. `always_changed` evita ese código por completo; el
+  costo es que el stage siempre se re-ejecuta en `dvc repro` en vez de
+  saltarse cuando nada cambió, aceptable dado lo barato que es correrlo.
+- Los remotes `dev`/`prod` de P2-04 ya existían; lo que faltaba en un
+  checkout nuevo era el paso local `dvc remote modify --local dev
+  access_key_id/secret_access_key` (con `$MINIO_ROOT_USER`/
+  `$MINIO_ROOT_PASSWORD`) y crear el bucket `dvc-cache` si no existía —
+  ambos ya documentados arriba en P2-04, solo faltaba ejecutarlos en este
+  checkout.
+
+### Criterios de aceptación
+
+- `dvc.yaml` define el stage `quality_gate` con dependencias y salida reales.
+- `dvc.lock` y `dvc.yaml` versionados en Git; los datos siguen fuera de Git.
+- `dvc repro` corre limpio y regenera `reports/quality.json`.
+- `dvc push`/`dvc pull` funcionan contra `dev` y `prod` (verificado: 612
+  archivos sincronizados en `dev`, `prod` ya en uso durante todo el proyecto).
+
 ## Frente 1 — Arquitectura y entorno del pipeline de calidad
 
 El portal de anotación (arriba) ya no es el entregable de la Fase 2: es la

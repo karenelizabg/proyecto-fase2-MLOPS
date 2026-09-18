@@ -1,0 +1,25 @@
+stages:
+  quality_gate:
+    # DVC's stage run-cache (`.dvc/cache/runs/`) fails on this machine with
+    # WinError 3 during its internal tmp-file move — very likely OneDrive
+    # syncing `Documents` in real time and locking the file mid-move, not a
+    # bug in this stage. `always_changed: true` skips that code path
+    # entirely (see `dvc/stage/cache.py::_can_hash`); the tradeoff is this
+    # stage always re-runs on `dvc repro` instead of skipping when
+    # unchanged, which is fine given how cheap it is.
+    always_changed: true
+    wdir: app
+    cmd: uv run python dvc_gate_stage.py
+    deps:
+      - ../data/raw/annotations
+      - ../data/raw/images
+      - dvc_gate_stage.py
+      - ingestion
+      - analyzers
+      - policies
+      - presentation/contracts.py
+      - presentation/gate.py
+      - storage/settings.py
+    metrics:
+      - ../reports/quality.json:
+          cache: false
