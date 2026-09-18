@@ -184,3 +184,28 @@ class JsonContractsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_p230_example_preserves_v1_and_documents_all_six_criteria():
+    report = QualityReport.model_validate(load_example("quality.json"))
+    expected = {
+        "min_images_per_class": (400.0, 300, ">=", True, "fail"),
+        "max_imbalance_ratio": (1.0, 20, "<=", True, "warn"),
+        "max_small_object_ratio": (0.45, 0.4, "<=", False, "warn"),
+        "degenerate_boxes": (0.0, 0, "<=", True, "fail"),
+        "duplicate_similarity_threshold": (1.0, 0, "==", False, "warn"),
+        "spatial_bias": (0.2, 0.15, ">=", True, "warn"),
+    }
+    assert {check.check_name for check in report.checks} == expected.keys()
+    for check in report.checks:
+        value, threshold, operator, passed, action = expected[check.check_name]
+        assert check.metric_value == value
+        assert check.details["criterion"]["threshold"] == threshold
+        assert check.details["criterion"]["operator"] == operator
+        assert check.details["criterion"]["metric"] == "metric_value"
+        assert check.passed is passed
+        assert check.action == action
+        assert "threshold" not in check.model_dump()
+    assert report.schema_version == "1.0"
+    assert report.status == "warning"
+    assert QualityReport.model_validate_json(report.model_dump_json()) == report

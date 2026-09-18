@@ -119,7 +119,6 @@ def test_report_has_six_checks_not_seven(tmp_path):
         dataset_dir=dataset_dir,
         policy=policy,
         dataset_version="test-1",
-        policy_path=policy_path,
     )
 
     names = {check.check_name for check in report.checks}
@@ -139,9 +138,7 @@ def test_status_passed_when_everything_meets_threshold(tmp_path):
     policy_path = _policy_path(tmp_path, min_images=2)
     policy = load_quality_policy(policy_path)
 
-    report = build_quality_report(
-        dataset_dir=dataset_dir, policy=policy, dataset_version="test-1", policy_path=policy_path
-    )
+    report = build_quality_report(dataset_dir=dataset_dir, policy=policy, dataset_version="test-1")
 
     assert report.status == "passed"
     assert all(check.passed for check in report.checks)
@@ -153,9 +150,7 @@ def test_status_failed_when_a_fail_action_check_does_not_pass(tmp_path):
     policy_path = _policy_path(tmp_path, min_images=99999)
     policy = load_quality_policy(policy_path)
 
-    report = build_quality_report(
-        dataset_dir=dataset_dir, policy=policy, dataset_version="test-1", policy_path=policy_path
-    )
+    report = build_quality_report(dataset_dir=dataset_dir, policy=policy, dataset_version="test-1")
 
     assert report.status == "failed"
     min_images_check = next(c for c in report.checks if c.check_name == "min_images_per_class")
@@ -198,9 +193,7 @@ min_spatial_dispersion:
     )
     policy = load_quality_policy(policy_path)
 
-    report = build_quality_report(
-        dataset_dir=dataset_dir, policy=policy, dataset_version="test-1", policy_path=policy_path
-    )
+    report = build_quality_report(dataset_dir=dataset_dir, policy=policy, dataset_version="test-1")
 
     # 1 gato / 2 perros con umbral de imbalance 1.0: ratio 2/1=2 > 1.0 falla,
     # pero es `action: warn`; ningún check `fail` falla (min_images pasa con
@@ -250,9 +243,7 @@ def test_min_images_per_class_check_reports_classes_below_minimum(tmp_path):
     policy_path = _policy_path(tmp_path, min_images=2)
     policy = load_quality_policy(policy_path)
 
-    report = build_quality_report(
-        dataset_dir=dataset_dir, policy=policy, dataset_version="test-1", policy_path=policy_path
-    )
+    report = build_quality_report(dataset_dir=dataset_dir, policy=policy, dataset_version="test-1")
 
     min_images_check = next(c for c in report.checks if c.check_name == "min_images_per_class")
     below = min_images_check.details["classes_below_minimum"]
@@ -276,6 +267,8 @@ def test_run_writes_quality_json(tmp_path, monkeypatch):
     report = run(Settings())
 
     written = json.loads((reports_dir / "quality.json").read_text(encoding="utf-8"))
+    assert QualityReport.model_validate(written) == report
+    assert all("criterion" in check["details"] for check in written["checks"])
     assert written["schema_version"] == "1.0"
     assert written["status"] == report.status
     assert len(written["checks"]) == 6
@@ -309,3 +302,87 @@ def test_broken_policy_is_rejected_by_pydantic_not_a_key_error(tmp_path, bad_fie
 
     with pytest.raises(ValidationError):
         load_quality_policy(policy_path)
+
+
+def test_p230_six_criteria_use_the_same_custom_policy(tmp_path):
+    dataset_dir = _write_dataset(tmp_path / "dataset", cats=2, dogs=4)
+    policy = load_quality_policy(_policy_path(tmp_path, min_images=2))
+    policy.max_imbalance_ratio.threshold = 2.0
+    policy.max_small_object_ratio.threshold = 1.0
+    policy.max_small_object_ratio.width_px = 41.0
+    policy.max_small_object_ratio.height_px = 41.0
+    policy.degenerate_boxes.threshold = 3.0
+    policy.duplicate_similarity_threshold.threshold = 0.0
+    policy.min_spatial_dispersion.threshold = 0.0
+    # No policy_path: all configurations must use this in-memory policy,
+    # not reload either the temporary YAML or the repository defaults.
+    before = policy.model_dump()
+    report = build_quality_report(dataset_dir=dataset_dir, policy=policy, dataset_version="test-1")
+    expected = {
+        "min_images_per_class": (2.0, 2.0, ">=", True, "fail"),
+        "max_imbalance_ratio": (2.0, 2.0, "<=", True, "warn"),
+        "max_small_object_ratio": (1.0, 1.0, "<=", True, "warn"),
+        "degenerate_boxes": (0.0, 3.0, "<=", True, "fail"),
+        "duplicate_similarity_threshold": (15.0, 0, "==", False, "warn"),
+        "spatial_bias": (0.0, 0.0, ">=", True, "warn"),
+    }
+    assert {check.check_name for check in report.checks} == expected.keys()
+    for check in report.checks:
+        value, threshold, operator, passed, action = expected[check.check_name]
+        assert check.metric_value == value
+        assert check.passed is passed
+        assert check.action == action
+        assert check.details["criterion"]["metric"] == "metric_value"
+        assert check.details["criterion"]["threshold"] == threshold
+        assert check.details["criterion"]["operator"] == operator
+    checks = {check.check_name: check for check in report.checks}
+    assert checks["max_small_object_ratio"].details["small_box_detection"] == {
+        "width_px": 41.0,
+        "height_px": 41.0,
+        "operator": "<",
+        "combination": "and",
+    }
+    duplicate = checks["duplicate_similarity_threshold"]
+    assert duplicate.details["similarity_threshold"] == 0.0
+    assert duplicate.details["similarity_operator"] == ">="
+    assert duplicate.details["similarity_formula"] == "1 - hamming_distance / hash_bits"
+    assert len(duplicate.details["image_pairs"]) == duplicate.metric_value
+    assert report.status == "warning"
+    assert policy.model_dump() == before
+    assert QualityReport.model_validate_json(report.model_dump_json()) == report
+    assert report.schema_version == "1.0"
+
+
+def test_p230_phash_detection_is_not_a_pair_count_limit(tmp_path):
+    dataset_dir = _write_dataset(tmp_path / "dataset", cats=1, dogs=1)
+    images = dataset_dir / "images"
+    (images / "dog.0.jpg").write_bytes((images / "cat.0.jpg").read_bytes())
+    policy = load_quality_policy(_policy_path(tmp_path, min_images=1))
+    policy.duplicate_similarity_threshold.threshold = 1.0
+    report = build_quality_report(dataset_dir=dataset_dir, policy=policy, dataset_version="test-1")
+    check = next(c for c in report.checks if c.check_name == "duplicate_similarity_threshold")
+    assert check.metric_value == 1.0
+    assert check.details["similarity_threshold"] == 1.0
+    assert check.details["image_pairs"][0]["similarity"] == 1.0
+    assert check.details["criterion"] == {
+        "metric": "metric_value",
+        "threshold": 0,
+        "operator": "==",
+    }
+    assert not check.passed  # 1 pair must fail, even though 1 <= similarity threshold.
+    assert check.action == "warn"
+    assert report.status == "warning"
+
+
+def test_p230_empty_category_cannot_pass_with_zero_ratio(tmp_path):
+    dataset_dir = _write_dataset(tmp_path / "dataset", cats=0, dogs=2)
+    policy = load_quality_policy(_policy_path(tmp_path, min_images=1))
+    report = build_quality_report(dataset_dir=dataset_dir, policy=policy, dataset_version="test-1")
+    check = next(c for c in report.checks if c.check_name == "max_imbalance_ratio")
+    assert check.metric_value == 0.0
+    assert check.details["ratio_defined"] is False
+    assert check.details["criterion"]["requires_ratio_defined"] is True
+    assert not check.passed
+    assert check.action == "warn"
+    assert report.status == "failed"  # Minimum images is an independent blocking check.
+    assert QualityReport.model_validate_json(report.model_dump_json()) == report
