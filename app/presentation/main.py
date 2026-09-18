@@ -36,13 +36,21 @@ def main() -> None:
     logger.info("dataset-quality-pipeline: arrancando.")
     _wait_for_dependencies()
 
-    try:
-        gate.run()
-    except Exception:  # noqa: BLE001 - un quality.json roto no debe tumbar el contenedor
-        logger.exception(
-            "La compuerta de calidad no pudo correr al arrancar; "
-            "el contenedor sigue vivo, reintenta con `python -m presentation.gate`."
+    # Un error al correr la compuerta (dataset roto, config inválida, storage
+    # caído) no se traga: el contenedor debe morir y dejar que `restart:
+    # on-failure` de docker-compose lo reintente, para que sea visible desde
+    # afuera (docker compose ps, reinicios) en vez de quedar "vivo" pero sin
+    # haber corrido nunca el gate.
+    report = gate.run()
+
+    if report.status == "failed":
+        logger.error(
+            "Compuerta de calidad BLOQUEADA (status=failed): al menos un check fail no pasó."
         )
+    elif report.status == "warning":
+        logger.warning("Compuerta de calidad con advertencias (status=warning).")
+    else:
+        logger.info("Compuerta de calidad OK (status=%s).", report.status)
 
     logger.info("Listo. Splits y versionado (tiers 4-5) se implementan en frentes posteriores.")
 
