@@ -1,6 +1,6 @@
 """Tier 3 — la compuerta de calidad end-to-end (P2-22/23/24).
 
-Corre los 4 analizadores existentes contra el dataset real, arma el
+Corre los 5 analizadores existentes contra el dataset real, arma el
 `QualityReport` (contrato v1.0 de P2-12) y lo escribe a disco. Si algún
 check con `action: fail` no pasa, `main()` devuelve 1 — pensado para
 encadenarse como paso previo obligatorio de la siguiente etapa del
@@ -17,19 +17,14 @@ import logging
 import sys
 from pathlib import Path
 
-from analyzers.duplicates import analyze_duplicates
-from analyzers.imbalance import analyze_imbalance
-from analyzers.invalid_boxes import analyze_invalid_boxes
-from analyzers.small_objects import analyze_small_objects
-from analyzers.spatial_bias import analyze_spatial_bias
+from analyzers.duplicates import DuplicateConfig, analyze_duplicates
+from analyzers.imbalance import ImbalanceConfig, analyze_imbalance
+from analyzers.invalid_boxes import InvalidBoxConfig, analyze_invalid_boxes
+from analyzers.small_objects import SmallObjectConfig, analyze_small_objects
+from analyzers.spatial_bias import SpatialBiasConfig, analyze_spatial_bias
 from ingestion.loader import load_dataset
 from ingestion.models import CocoDataset
-from policies.duplicates import load_duplicate_config
-from policies.imbalance import load_imbalance_config
-from policies.invalid_boxes import load_invalid_box_config
 from policies.models import QualityPolicy
-from policies.small_objects import load_small_object_config
-from policies.spatial_bias import load_spatial_bias_config
 from presentation.contracts import QualityCheck, QualityReport
 from storage.settings import Settings
 
@@ -59,24 +54,30 @@ def build_quality_report(
     dataset_dir: Path,
     policy: QualityPolicy,
     dataset_version: str,
-    policy_path: Path | None = None,
 ) -> QualityReport:
-    """`policy` decide acción/umbral por check en el reporte; `policy_path`
-    es la ruta de `quality.yaml` que usan los `load_*_config()` para armar
-    la config propia de cada analizador (`None` = su default, relativo a
-    `policies/models.py`, no a `dataset_dir` — deben apuntar al mismo
-    archivo que produjo `policy`, así que solo se sobreescribe en tests)."""
+    """Ejecuta y describe los checks desde una única política ya cargada."""
     coco = load_dataset(dataset_dir / "annotations")
     coco_dict = coco.model_dump()
     images_dir = dataset_dir / "images"
 
-    imbalance_result = analyze_imbalance(coco_dict, load_imbalance_config(policy_path))
-    small_objects_result = analyze_small_objects(coco_dict, load_small_object_config(policy_path))
-    invalid_boxes_result = analyze_invalid_boxes(coco_dict, load_invalid_box_config(policy_path))
-    duplicates_result = analyze_duplicates(
-        _load_image_bytes(coco, images_dir), load_duplicate_config(policy_path)
+    imbalance_config = ImbalanceConfig(
+        min_images_per_class=policy.min_images_per_class.threshold,
+        threshold=policy.max_imbalance_ratio.threshold,
     )
-    spatial_bias_result = analyze_spatial_bias(coco_dict, load_spatial_bias_config(policy_path))
+    small_config = SmallObjectConfig(
+        width_px=policy.max_small_object_ratio.width_px,
+        height_px=policy.max_small_object_ratio.height_px,
+        threshold=policy.max_small_object_ratio.threshold,
+    )
+    invalid_config = InvalidBoxConfig(threshold=policy.degenerate_boxes.threshold)
+    duplicate_config = DuplicateConfig(threshold=policy.duplicate_similarity_threshold.threshold)
+    spatial_config = SpatialBiasConfig(min_std_dev=policy.min_spatial_dispersion.threshold)
+
+    imbalance_result = analyze_imbalance(coco_dict, imbalance_config)
+    small_objects_result = analyze_small_objects(coco_dict, small_config)
+    invalid_boxes_result = analyze_invalid_boxes(coco_dict, invalid_config)
+    duplicates_result = analyze_duplicates(_load_image_bytes(coco, images_dir), duplicate_config)
+    spatial_bias_result = analyze_spatial_bias(coco_dict, spatial_config)
 
     checks = [
         _min_images_per_class_check(imbalance_result, policy),
@@ -96,6 +97,32 @@ def build_quality_report(
             **spatial_bias_result.model_dump(), action=policy.min_spatial_dispersion.action
         ),
     ]
+
+    # Los criterios describen el cumplimiento; no recalculan `passed`.
+    criteria = [
+        {"threshold": imbalance_config.min_images_per_class, "operator": ">="},
+        {
+            "threshold": imbalance_config.threshold,
+            "operator": "<=",
+            "requires_ratio_defined": True,
+        },
+        {"threshold": small_config.threshold, "operator": "<="},
+        {"threshold": invalid_config.threshold, "operator": "<="},
+        # Cero pares es el criterio existente, no el umbral de similitud pHash.
+        {"threshold": 0, "operator": "=="},
+        {"threshold": spatial_config.min_std_dev, "operator": ">="},
+    ]
+    for check, criterion in zip(checks, criteria, strict=True):
+        check.details["criterion"] = {"metric": "metric_value", **criterion}
+    small_objects_check = checks[2]
+    small_objects_check.details["small_box_detection"] = {
+        "width_px": small_config.width_px,
+        "height_px": small_config.height_px,
+        "operator": "<",
+        "combination": "and",
+    }
+    checks[4].details["similarity_operator"] = ">="
+    checks[4].details["similarity_formula"] = "1 - hamming_distance / hash_bits"
 
     if any(check.action == "fail" and not check.passed for check in checks):
         status = "failed"

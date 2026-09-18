@@ -45,12 +45,53 @@ no a presentación. `passed` significa que no hay incumplimientos; `warning`,
 que hay advertencias pero no bloqueos; `failed`, que hay un bloqueo. El contrato
 no calcula ni impone esa agregación para no implementar la compuerta de otro ticket.
 
-En el ejemplo, `metric_value` representa: mínimo de imágenes por clase (400),
-ratio mayor/menor clase (1), proporción de objetos pequeños (0.45), cantidad de
-cajas degeneradas (0) y pares con fuga entre splits (0), respectivamente. Un check
-con `action=fail` puede tener `passed=true`: la acción aplica solo si incumple.
-No se copian ni evalúan umbrales de `policies/quality.yaml`. El umbral de similitud
-de duplicados es un parámetro de análisis, no se inventa un resultado para él.
+## P2-30 — Valor y criterio por check (compatible con v1.0)
+
+El gate conserva `metric_value`, `passed`, `action` y el `status` global.
+Publica en `details.criterion` el campo evaluado (`metric: "metric_value"`),
+el `threshold` y el `operator`. Es una extensión documentada de `details`,
+no un campo nuevo de `QualityCheck` ni una nueva versión del contrato.
+El esquema genérico permite estas claves; las pruebas del gate garantizan
+su presencia y significado para los seis checks reales.
+
+| Check | Valor | Criterio de cumplimiento |
+|---|---|---|
+| `min_images_per_class` | Mínimo de imágenes distintas por categoría | `>=` umbral mínimo |
+| `max_imbalance_ratio` | Mayoría/minoría | Ratio definido **y** `<=` umbral máximo |
+| `max_small_object_ratio` | Proporción de cajas pequeñas | `<=` proporción máxima |
+| `degenerate_boxes` | Cantidad de anotaciones inválidas | `<=` cantidad permitida |
+| `duplicate_similarity_threshold` | Cantidad de pares detectados | `== 0` pares |
+| `spatial_bias` | Menor desviación estándar de centros normalizados X/Y | `>=` dispersión mínima |
+
+Para desbalance, `criterion.requires_ratio_defined=true` exige además
+`details.ratio_defined=true`. Con una categoría vacía, el valor cero es un
+marcador finito, el ratio está indefinido y `passed=false`: comparar únicamente
+el cero con el umbral produciría una interpretación incorrecta.
+
+Para objetos pequeños, `details.small_box_detection` publica `width_px`,
+`height_px`, `operator: "<"` y `combination: "and"`: ambos lados deben estar
+bajo sus límites. Estos tamaños no son el umbral de proporción del criterio.
+
+Para pHash, `details.similarity_threshold` es el umbral de **detección**,
+con `similarity_operator: ">="` y fórmula
+`similarity_formula: "1 - hamming_distance / hash_bits"`. Cada par conserva
+su similitud y distancia. `criterion.threshold=0` describe la ausencia de
+pares requerida por el analizador existente: nunca se compara una cantidad
+con la similitud 0.94. No se evalúan splits.
+
+`build_quality_report()` recibe una única instancia `QualityPolicy` y construye
+con ella las configuraciones de los analizadores y los criterios publicados.
+No vuelve a cargar YAML. Se retiró su argumento interno `policy_path`; los
+llamadores cargan la política antes de invocarlo. Los algoritmos no cambian.
+
+`passed=true` indica cumplimiento; si es falso, `action=warn` advierte y
+`action=fail` bloquea. El estado global sigue siendo `failed` si existe un
+bloqueo, `warning` si solo hay advertencias y `passed` si todo cumple.
+
+El ejemplo manual contiene los seis checks reales con datos ficticios:
+400 imágenes mínimas por clase, ratio 1, proporción pequeña 0.45, cero cajas
+inválidas, un par similar y dispersión 0.20. Su estado global es `warning`.
+No incluye `cross_split_leakage`, que el gate todavía no ejecuta.
 
 ## splits.json — SplitsReport
 
