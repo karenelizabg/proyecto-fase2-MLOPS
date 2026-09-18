@@ -72,3 +72,22 @@ def test_details_report_mean_center_and_total_boxes():
 def test_invalid_configuration_is_rejected(overrides):
     with pytest.raises(ValidationError):
         config(**overrides)
+
+
+def test_exact_threshold_and_scale_invariance():
+    boxes = ((0, 0, 20, 20), (50, 50, 20, 20))
+    result = analyze_spatial_bias(coco_with_boxes(*boxes), config(min_std_dev=0.25))
+    assert result.metric_value == pytest.approx(0.25)
+    assert result.passed
+    scaled = tuple(tuple(value * 2 for value in box) for box in boxes)
+    second = analyze_spatial_bias(
+        coco_with_boxes(*scaled, width=200, height=200), config(min_std_dev=0.25)
+    )
+    assert second == result
+
+
+@pytest.mark.parametrize("boxes", [(), ((10, 10, 20, 20),)])
+def test_degenerate_sample_count_passes_zero_threshold(boxes):
+    result = analyze_spatial_bias(coco_with_boxes(*boxes), config(min_std_dev=0.0))
+    assert result.metric_value == 0
+    assert result.passed

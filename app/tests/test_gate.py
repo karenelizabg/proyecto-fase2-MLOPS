@@ -41,7 +41,7 @@ def _policy_path(tmp_path, min_images=2):
     return path
 
 
-def test_report_has_six_checks_not_seven(tmp_path):
+def test_report_has_seven_checks(tmp_path):
     dataset_dir = write_coco_dataset(tmp_path / "dataset")
     policy_path = _policy_path(tmp_path)
     policy = load_quality_policy(policy_path)
@@ -60,8 +60,9 @@ def test_report_has_six_checks_not_seven(tmp_path):
         "degenerate_boxes",
         "duplicate_similarity_threshold",
         "spatial_bias",
+        "cross_split_leakage",
     }
-    assert "cross_split_leakage" not in names
+    assert "cross_split_leakage" in names
 
 
 def test_status_passed_when_everything_meets_threshold(tmp_path):
@@ -202,11 +203,11 @@ def test_run_writes_quality_json(tmp_path, monkeypatch):
     assert all("criterion" in check["details"] for check in written["checks"])
     assert written["schema_version"] == "1.0"
     assert written["status"] == report.status
-    assert len(written["checks"]) == 6
+    assert len(written["checks"]) == 7
 
 
 def test_main_returns_nonzero_exit_code_when_failed(tmp_path, monkeypatch):
-    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=1, dogs=1)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=2, dogs=2)
     monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://u:p@localhost/db")
     monkeypatch.setenv("MINIO_ENDPOINT", "localhost")
     monkeypatch.setenv("MINIO_PORT", "9000")
@@ -216,7 +217,7 @@ def test_main_returns_nonzero_exit_code_when_failed(tmp_path, monkeypatch):
     monkeypatch.setenv("DATASET_DIR", str(dataset_dir))
     monkeypatch.setenv("REPORTS_DIR", str(tmp_path / "reports"))
     # El quality.yaml real (min_images_per_class=300) siempre falla contra
-    # un dataset sintético de 1-2 imágenes: exit code 1 garantizado.
+    # un dataset sintético de cuatro imágenes: exit code 1 garantizado.
 
     assert main() == 1
 
@@ -235,7 +236,7 @@ def test_broken_policy_is_rejected_by_pydantic_not_a_key_error(tmp_path, bad_fie
         load_quality_policy(policy_path)
 
 
-def test_p230_six_criteria_use_the_same_custom_policy(tmp_path):
+def test_seven_criteria_use_the_same_custom_policy(tmp_path):
     dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=2, dogs=4)
     policy = load_quality_policy(_policy_path(tmp_path, min_images=2))
     policy.max_imbalance_ratio.threshold = 2.0
@@ -243,7 +244,7 @@ def test_p230_six_criteria_use_the_same_custom_policy(tmp_path):
     policy.max_small_object_ratio.width_px = 41.0
     policy.max_small_object_ratio.height_px = 41.0
     policy.degenerate_boxes.threshold = 3.0
-    policy.duplicate_similarity_threshold.threshold = 0.0
+    policy.duplicate_similarity_threshold.threshold = 1.0
     policy.min_spatial_dispersion.threshold = 0.0
     # No policy_path: all configurations must use this in-memory policy,
     # not reload either the temporary YAML or the repository defaults.
@@ -254,7 +255,8 @@ def test_p230_six_criteria_use_the_same_custom_policy(tmp_path):
         "max_imbalance_ratio": (2.0, 2.0, "<=", True, "warn"),
         "max_small_object_ratio": (1.0, 1.0, "<=", True, "warn"),
         "degenerate_boxes": (0.0, 3.0, "<=", True, "fail"),
-        "duplicate_similarity_threshold": (15.0, 0, "==", False, "warn"),
+        "duplicate_similarity_threshold": (0.0, 0, "==", True, "warn"),
+        "cross_split_leakage": (0.0, 0, "<=", True, "fail"),
         "spatial_bias": (0.0, 0.0, ">=", True, "warn"),
     }
     assert {check.check_name for check in report.checks} == expected.keys()
@@ -274,18 +276,18 @@ def test_p230_six_criteria_use_the_same_custom_policy(tmp_path):
         "combination": "and",
     }
     duplicate = checks["duplicate_similarity_threshold"]
-    assert duplicate.details["similarity_threshold"] == 0.0
+    assert duplicate.details["similarity_threshold"] == 1.0
     assert duplicate.details["similarity_operator"] == ">="
     assert duplicate.details["similarity_formula"] == "1 - hamming_distance / hash_bits"
     assert len(duplicate.details["image_pairs"]) == duplicate.metric_value
-    assert report.status == "warning"
+    assert report.status == "passed"
     assert policy.model_dump() == before
     assert QualityReport.model_validate_json(report.model_dump_json()) == report
     assert report.schema_version == "1.0"
 
 
 def test_p230_phash_detection_is_not_a_pair_count_limit(tmp_path):
-    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=1, dogs=1)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=2, dogs=2)
     images = dataset_dir / "images"
     (images / "dog.0.jpg").write_bytes((images / "cat.0.jpg").read_bytes())
     policy = load_quality_policy(_policy_path(tmp_path, min_images=1))
@@ -306,7 +308,7 @@ def test_p230_phash_detection_is_not_a_pair_count_limit(tmp_path):
 
 
 def test_p230_empty_category_cannot_pass_with_zero_ratio(tmp_path):
-    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=0, dogs=2)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=0, dogs=3)
     policy = load_quality_policy(_policy_path(tmp_path, min_images=1))
     report = build_quality_report(dataset_dir=dataset_dir, policy=policy, dataset_version="test-1")
     check = next(c for c in report.checks if c.check_name == "max_imbalance_ratio")
@@ -317,3 +319,67 @@ def test_p230_empty_category_cannot_pass_with_zero_ratio(tmp_path):
     assert check.action == "warn"
     assert report.status == "failed"  # Minimum images is an independent blocking check.
     assert QualityReport.model_validate_json(report.model_dump_json()) == report
+
+
+@pytest.mark.parametrize(
+    "action,threshold,expected",
+    [("fail", 0, "failed"), ("warn", 0, "warning"), ("fail", 1, "warning")],
+)
+def test_real_leakage_from_contaminated_split_changes_status(
+    tmp_path, monkeypatch, action, threshold, expected
+):
+    from dataclasses import replace
+
+    from presentation import gate
+
+    dataset = write_coco_dataset(tmp_path / "data", cats=2, dogs=2)
+    (dataset / "images/dog.0.jpg").write_bytes((dataset / "images/cat.0.jpg").read_bytes())
+    policy = load_quality_policy(_policy_path(tmp_path, min_images=1))
+    policy.cross_split_leakage.action = action
+    policy.cross_split_leakage.threshold = threshold
+    original = gate.split_dataset
+
+    def faulty_split(*args, **kwargs):
+        result = original(*args, **kwargs)
+        # Fault injection: same real pHash pair (1,3), valid coverage, different splits.
+        return replace(result, assignments={"train": (1, 2), "val": (3,), "test": (4,)})
+
+    monkeypatch.setattr(gate, "split_dataset", faulty_split)
+    report = build_quality_report(dataset_dir=dataset, policy=policy, dataset_version="test-1")
+    check = next(c for c in report.checks if c.check_name == "cross_split_leakage")
+    assert check.metric_value == 1
+    assert check.passed is (threshold >= 1)
+    assert check.action == action
+    assert check.details["criterion"] == {
+        "metric": "metric_value",
+        "threshold": threshold,
+        "operator": "<=",
+    }
+    assert report.status == expected
+    assert QualityReport.model_validate_json(report.model_dump_json()) == report
+
+
+def test_zero_similarity_cannot_fabricate_three_splits(tmp_path):
+    dataset = write_coco_dataset(tmp_path / "data", cats=3, dogs=3)
+    policy = load_quality_policy(_policy_path(tmp_path))
+    policy.duplicate_similarity_threshold.threshold = 0.0
+    with pytest.raises(ValueError, match="three independent image groups"):
+        build_quality_report(dataset_dir=dataset, policy=policy, dataset_version="test-1")
+
+
+@pytest.mark.parametrize("action,status", [("warn", "warning"), ("fail", "failed")])
+def test_spatial_metric_from_coco_controls_global_status(tmp_path, action, status):
+    dataset = write_coco_dataset(tmp_path / "data", cats=2, dogs=2)
+    policy = load_quality_policy(_policy_path(tmp_path))
+    policy.min_spatial_dispersion.threshold = 0.15
+    policy.min_spatial_dispersion.action = action
+    report = build_quality_report(dataset_dir=dataset, policy=policy, dataset_version="test-1")
+    spatial = next(c for c in report.checks if c.check_name == "spatial_bias")
+    assert spatial.details["total_boxes"] == 4
+    assert spatial.details["mean_center_x"] == 20 / 64
+    assert spatial.metric_value == 0
+    assert not spatial.passed
+    assert report.status == status
+    policy.min_spatial_dispersion.threshold = 0.0
+    report = build_quality_report(dataset_dir=dataset, policy=policy, dataset_version="test-1")
+    assert report.status == "passed"  # Equality at zero passes.

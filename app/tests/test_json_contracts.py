@@ -209,3 +209,26 @@ def test_p230_example_preserves_v1_and_documents_all_six_criteria():
     assert report.schema_version == "1.0"
     assert report.status == "warning"
     assert QualityReport.model_validate_json(report.model_dump_json()) == report
+
+
+def test_quality_v1_accepts_historical_six_and_new_seven_checks():
+    document = load_example("quality.json")
+    historical = QualityReport.model_validate(document)
+    assert len(historical.checks) == 6
+    document["checks"].append(
+        {
+            "check_name": "cross_split_leakage",
+            "passed": True,
+            "metric_value": 0.0,
+            "action": "fail",
+            "details": {
+                "criterion": {"metric": "metric_value", "operator": "<=", "threshold": 0},
+                "image_pairs": [],
+                "total_pairs_evaluated": 0,
+            },
+        }
+    )
+    current = QualityReport.model_validate(document)
+    assert len(current.checks) == 7
+    assert current.schema_version == historical.schema_version == "1.0"
+    assert QualityReport.model_validate_json(current.model_dump_json()) == current

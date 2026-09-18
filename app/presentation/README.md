@@ -88,10 +88,11 @@ llamadores cargan la política antes de invocarlo. Los algoritmos no cambian.
 `action=fail` bloquea. El estado global sigue siendo `failed` si existe un
 bloqueo, `warning` si solo hay advertencias y `passed` si todo cumple.
 
-El ejemplo manual contiene los seis checks reales con datos ficticios:
+El ejemplo manual histórico conserva seis checks con datos ficticios:
 400 imágenes mínimas por clase, ratio 1, proporción pequeña 0.45, cero cajas
 inválidas, un par similar y dispersión 0.20. Su estado global es `warning`.
-No incluye `cross_split_leakage`, que el gate todavía no ejecuta.
+No incluye `cross_split_leakage`; sigue siendo un reporte v1.0 válido. Desde P2-53
+el gate calcula siete checks, incluido leakage de las asignaciones actuales.
 
 ## splits.json — SplitsReport
 
@@ -158,9 +159,9 @@ en esta copia. Cualquier necesidad nueva debe discutirse antes de cambiar v1.0.
 
 `gate.py` es el primer código que efectivamente corre el pipeline contra el
 dataset real: `ingestion/loader.py` junta los `annotations-lote-*.json` de
-`data/raw/annotations/` en un `CocoDataset` validado, corre los 5
+`data/raw/annotations/` en un `CocoDataset` validado, corre los 6
 analizadores existentes (`imbalance`, `small_objects`, `invalid_boxes`,
-`duplicates`, `spatial_bias`), arma un `QualityReport` real (no el ejemplo)
+`duplicates`, `spatial_bias`, `cross_split_leakage`), arma un `QualityReport` real (no el ejemplo)
 y lo escribe en `REPORTS_DIR/quality.json`.
 
 - `min_images_per_class` no es su propio analizador (vive dentro de
@@ -175,9 +176,9 @@ y lo escribe en `REPORTS_DIR/quality.json`.
   cajas; el ticket original no definía el algoritmo, se confirmó con Andy
   (ver `analyzers/README.md`). `quality.yaml` gana una clave nueva
   (`min_spatial_dispersion`) que no existía para ningún analizador previo.
-- `cross_split_leakage` NO se incluye: requiere splits reales, que no
-  existen hasta que se implemente ese tier. El reporte solo declara los 6
-  checks que sí se pueden evaluar hoy; no se inventa ese dato.
+- `cross_split_leakage` cuenta pares pHash únicos repartidos entre los splits
+  calculados en la misma evaluación. Usa threshold/action de su política.
+  Siete checks se publican sin cambiar el contrato v1.0.
 - `main()` devuelve `1` si algún check con `action: fail` no pasó — pensado
   para encadenarse como dependencia dura de la siguiente etapa
   (`python -m presentation.gate; echo "exit=$?"`).
@@ -269,3 +270,31 @@ uv run python -m presentation.mcp_server   # stdio, para un cliente MCP local
 No se agregó ningún servicio nuevo a `docker-compose.yml`: el agente del
 Copilot que consumiría este servidor todavía no existe (es trabajo de un
 ticket posterior), así que por ahora se invoca manualmente vía stdio.
+
+### P2-53: evaluación compartida y leakage
+
+`evaluate_dataset()` carga COCO y bytes una vez, ejecuta pHash una vez y construye
+un `SplitResult` con la misma política de similitud y una única `SplitsConfig`.
+Devuelve `(QualityReport, SplitResult)`. `build_quality_report()` conserva la API
+de solo reporte; `cut_release()` consume ambos resultados de esa evaluación,
+sin volver a detectar duplicados ni generar otra asignación. Un release con
+calidad failed sigue permitido; los releases históricos no se reescriben.
+
+Leakage cuenta aristas pHash directas, no todas las combinaciones de una componente
+transitiva: A-B/B-A cuenta una vez. `details.image_pairs` contiene solo pares
+cruzados con IDs, splits, distancia y similitud; `total_pairs_evaluated` incluye
+también pares internos. Incluye `images_per_split`, `splits_config`, threshold
+pHash y `criterion: metric_value <= threshold`. La prevención SHA/filename/pHash
+del splitter se conserva; la nueva métrica audita las asignaciones resultantes.
+No certifica asignaciones externas ni históricas que no se persistieron.
+
+Asignaciones incompletas, duplicadas o con referencias desconocidas son errores;
+una contaminación válida es un check incumplido. Menos de tres componentes
+independientes impide generar tres splits no vacíos y aborta explícitamente la
+evaluación (por ejemplo, threshold pHash=0 une todas las imágenes). No se publica
+un cero inventado. Settings mantiene sus seis controles; leakage no es editable.
+
+DVC quality_gate incorpora código y parámetros de splits (train/val/test/seed).
+No se añade stage ni se persisten assignments. El wrapper sigue distinguiendo
+éxito técnico de `quality.status`: una evaluación failed calculada exitosamente
+no hace fallar DVC. `gate.main()` sí devuelve 1 ante failed.

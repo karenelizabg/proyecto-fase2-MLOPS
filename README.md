@@ -858,8 +858,9 @@ cargada una vez; ya no recarga otra política para agrupar duplicados.
 
 Estos YAML siguen siendo configuración versionada en Git; guardar puede
 dejar cambios locales que deben revisarse. DVC ya observa `policies/` para
-quality_gate; no se añade ningún stage. Cambiar splits afecta el próximo
-corte de release, no reescribe los splits congelados.
+quality_gate; no se añade ningún stage. Desde P2-53, quality_gate también registra ratios y seed de splits. Cambiarlos
+afecta la próxima evaluación de leakage y el próximo corte de release,
+sin reescribir los splits congelados.
 
 Se añadió `yaml` como dependencia directa del backend para leer/escribir
 YAML sin un parser artesanal. El backend actual no tiene autenticación ni

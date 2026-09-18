@@ -1,22 +1,20 @@
 """Tier 3 — la compuerta de calidad end-to-end (P2-22/23/24).
 
-Corre los 5 analizadores existentes contra el dataset real, arma el
+Corre los 6 analizadores existentes contra el dataset real, arma el
 `QualityReport` (contrato v1.0 de P2-12) y lo escribe a disco. Si algún
 check con `action: fail` no pasa, `main()` devuelve 1 — pensado para
 encadenarse como paso previo obligatorio de la siguiente etapa del
 pipeline (`<comando del gate>; echo "exit=$?"` debe imprimir un código
 distinto de 0).
 
-`cross_split_leakage` no se incluye todavía: requiere splits reales, que
-no existen hasta que se implemente el algoritmo de splits (Tier 4). No se
-inventa ese dato — el reporte solo declara los 6 checks que sí se pueden
-evaluar hoy contra el dataset real.
+P2-53: los siete checks comparten COCO, bytes, pares pHash y splits reales.
 """
 
 import logging
 import sys
 from pathlib import Path
 
+from analyzers.cross_split_leakage import LeakageConfig, analyze_cross_split_leakage
 from analyzers.duplicates import DuplicateConfig, analyze_duplicates
 from analyzers.imbalance import ImbalanceConfig, analyze_imbalance
 from analyzers.invalid_boxes import InvalidBoxConfig, analyze_invalid_boxes
@@ -25,6 +23,8 @@ from analyzers.spatial_bias import SpatialBiasConfig, analyze_spatial_bias
 from ingestion.loader import load_dataset, load_image_bytes
 from policies.models import QualityPolicy
 from presentation.contracts import QualityCheck, QualityReport
+from splits.models import SplitsConfig, load_splits_config
+from splits.stratified import SplitResult, split_dataset
 from storage.settings import Settings
 
 logger = logging.getLogger("quality-gate")
@@ -44,13 +44,15 @@ def _min_images_per_class_check(imbalance_result, policy: QualityPolicy) -> Qual
     )
 
 
-def build_quality_report(
+def evaluate_dataset(
     *,
     dataset_dir: Path,
     policy: QualityPolicy,
     dataset_version: str,
-) -> QualityReport:
+    splits_config: SplitsConfig | None = None,
+) -> tuple[QualityReport, SplitResult]:
     """Ejecuta y describe los checks desde una única política ya cargada."""
+    splits_config = splits_config if splits_config is not None else load_splits_config()
     coco = load_dataset(dataset_dir / "annotations")
     coco_dict = coco.model_dump()
     images_dir = dataset_dir / "images"
@@ -71,7 +73,25 @@ def build_quality_report(
     imbalance_result = analyze_imbalance(coco_dict, imbalance_config)
     small_objects_result = analyze_small_objects(coco_dict, small_config)
     invalid_boxes_result = analyze_invalid_boxes(coco_dict, invalid_config)
-    duplicates_result = analyze_duplicates(load_image_bytes(coco, images_dir), duplicate_config)
+    image_contents = load_image_bytes(coco, images_dir)
+    duplicates_result = analyze_duplicates(image_contents, duplicate_config)
+    split_result = split_dataset(
+        coco,
+        splits_config,
+        image_contents=image_contents,
+        duplicate_pairs=duplicates_result.details["image_pairs"],
+    )
+    leakage_config = LeakageConfig(
+        threshold=policy.cross_split_leakage.threshold,
+        similarity_threshold=duplicate_config.threshold,
+    )
+    leakage_result = analyze_cross_split_leakage(
+        split_result.assignments,
+        duplicates_result.details["image_pairs"],
+        leakage_config,
+        image_ids=[image.id for image in coco.images],
+    )
+    leakage_result.details["splits_config"] = splits_config.model_dump()
     spatial_bias_result = analyze_spatial_bias(coco_dict, spatial_config)
 
     checks = [
@@ -91,6 +111,7 @@ def build_quality_report(
         QualityCheck(
             **spatial_bias_result.model_dump(), action=policy.min_spatial_dispersion.action
         ),
+        QualityCheck(**leakage_result.model_dump(), action=policy.cross_split_leakage.action),
     ]
 
     # Los criterios describen el cumplimiento; no recalculan `passed`.
@@ -106,6 +127,7 @@ def build_quality_report(
         # Cero pares es el criterio existente, no el umbral de similitud pHash.
         {"threshold": 0, "operator": "=="},
         {"threshold": spatial_config.min_std_dev, "operator": ">="},
+        {"threshold": leakage_config.threshold, "operator": "<="},
     ]
     for check, criterion in zip(checks, criteria, strict=True):
         check.details["criterion"] = {"metric": "metric_value", **criterion}
@@ -126,12 +148,31 @@ def build_quality_report(
     else:
         status = "passed"
 
-    return QualityReport(
+    report = QualityReport(
         schema_version="1.0",
         dataset_version=dataset_version,
         status=status,
         checks=checks,
     )
+
+    return report, split_result
+
+
+def build_quality_report(
+    *,
+    dataset_dir: Path,
+    policy: QualityPolicy,
+    dataset_version: str,
+    splits_config: SplitsConfig | None = None,
+) -> QualityReport:
+    """Compatible report-only API; release consumes evaluate_dataset's shared split."""
+    report, _ = evaluate_dataset(
+        dataset_dir=dataset_dir,
+        policy=policy,
+        dataset_version=dataset_version,
+        splits_config=splits_config,
+    )
+    return report
 
 
 def run(settings: Settings | None = None) -> QualityReport:

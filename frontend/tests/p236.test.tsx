@@ -144,3 +144,25 @@ it("shows a contract error for an invalid referenced QualityReport", async () =>
   expect(await screen.findByText("El reporte no tiene el formato esperado.")).toBeInTheDocument();
   expect(await screen.findByText("600 imágenes · v0.1.0")).toBeInTheDocument();
 });
+
+it("renders seven checks including real cross-split diagnostics while accepting the historical six", async () => {
+  const leakage = {
+    check_name: "cross_split_leakage", passed: false, metric_value: 1, action: "fail",
+    details: {
+      criterion: { metric: "metric_value", threshold: 0, operator: "<=" },
+      similarity_threshold: 0.94, total_pairs_evaluated: 1,
+      image_pairs: [{ image_id_a: 41, image_id_b: 42, split_a: "train", split_b: "test", hamming_distance: 2, similarity: 0.96875 }],
+    },
+  };
+  serve({ ...files, "/reports/quality.json": { ...quality, checks: [...quality.checks, leakage] } });
+  open("analyzers");
+  const row = (await screen.findByText("cross_split_leakage")).closest("tr")!;
+  expect(screen.getAllByRole("row")).toHaveLength(8);
+  expect(within(row).getByText("1")).toBeInTheDocument();
+  expect(within(row).getByText("<= 0")).toBeInTheDocument();
+  expect(within(row).getAllByText("fail")).toHaveLength(2);
+  expect(within(row).getByText("Pares detectados (1)")).toBeInTheDocument();
+  expect(within(row).getByText(/train → test/)).toBeInTheDocument();
+  expect(within(row).getByText(/Hamming: 2/)).toBeInTheDocument();
+  expect(within(row).getByText(/similitud 0.96875/)).toBeInTheDocument();
+});
