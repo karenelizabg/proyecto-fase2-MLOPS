@@ -61,6 +61,8 @@ function sendError(res: express.Response, error: unknown, fallback: string): voi
  * únicamente se comunica con la capa Logic.
  */
 const app = express();
+// Sin la cabecera `X-Powered-By: Express`: no hace falta anunciar el framework ni su versión.
+app.disable('x-powered-by');
 const port = env.PORT;
 
 app.use(express.json());

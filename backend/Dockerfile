@@ -3,7 +3,9 @@ FROM node:20-slim
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# --ignore-scripts: sin scripts de instalación de terceros. Los binarios nativos (esbuild,
+# sharp, Biome) llegan como paquetes opcionales y no los necesitan.
+RUN npm ci --ignore-scripts
 
 COPY . .
 RUN npm run build
