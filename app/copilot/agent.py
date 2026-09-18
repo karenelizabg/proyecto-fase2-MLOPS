@@ -157,7 +157,8 @@ async def answer(
         logger.info("Ronda %d: herramientas pedidas %s", round_number, [b.name for b in tool_uses])
         traces = [await _call_tool(mcp_client, block) for block in tool_uses]
         calls.extend(traces)
-        results = [_tool_result_block(block, trace) for block, trace in zip(tool_uses, traces)]
+        pairs = zip(tool_uses, traces, strict=True)
+        results = [_tool_result_block(block, trace) for block, trace in pairs]
         messages.append({"role": "user", "content": results})
 
     raise CopilotError(
