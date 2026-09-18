@@ -65,7 +65,8 @@ def create_app(
     settings = settings if settings is not None else Settings()
     create_message = create_message or _provider_create_message(settings)
 
-    async def health(_: Request) -> JSONResponse:
+    def health(_: Request) -> JSONResponse:
+        # Sin `async`: no espera nada. Starlette corre las funciones normales en un hilo aparte.
         return JSONResponse({"status": "ok", "configured": create_message is not None})
 
     async def chat(request: Request) -> JSONResponse:

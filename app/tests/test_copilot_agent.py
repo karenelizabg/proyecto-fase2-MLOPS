@@ -138,23 +138,26 @@ def test_unusable_model_stops_become_a_user_safe_error(
     monkeypatch, tmp_path, stop_reason, expected
 ):
     llm = ScriptedLlm(text_message("parcial", stop_reason=stop_reason))
+    request = ask("hola")
 
     with pytest.raises(CopilotError, match=expected):
-        run(monkeypatch, tmp_path, llm, ask("hola"))
+        run(monkeypatch, tmp_path, llm, request)
 
 
 def test_an_empty_model_answer_becomes_a_user_safe_error(monkeypatch, tmp_path):
     llm = ScriptedLlm(text_message("   "))
+    request = ask("hola")
 
     with pytest.raises(CopilotError, match="no devolvió"):
-        run(monkeypatch, tmp_path, llm, ask("hola"))
+        run(monkeypatch, tmp_path, llm, request)
 
 
 def test_a_model_that_never_stops_calling_tools_is_cut_off(monkeypatch, tmp_path):
     write_annotations(tmp_path / "dataset" / "annotations")
     llm = ScriptedLlm(*[tool_use_message("get_dataset_summary")] * MAX_TOOL_ROUNDS)
+    request = ask("hola")
 
     with pytest.raises(CopilotError, match="demasiadas consultas"):
-        run(monkeypatch, tmp_path, llm, ask("hola"))
+        run(monkeypatch, tmp_path, llm, request)
 
     assert len(llm.calls) == MAX_TOOL_ROUNDS

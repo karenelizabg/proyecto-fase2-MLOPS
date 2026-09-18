@@ -266,7 +266,8 @@ def test_without_semantic_versions_the_latest_is_not_guessed(tmp_path, monkeypat
     explicit = result_json(call(server, "get_splits_report", {"dataset_version": "demo-v2"}))
 
     assert implicit["available"] is False
-    assert "demo-v1" in implicit["reason"] and "demo-v2" in implicit["reason"]
+    assert "demo-v1" in implicit["reason"]
+    assert "demo-v2" in implicit["reason"]
     assert explicit["data"]["dataset_version"] == "demo-v2"
 
 
