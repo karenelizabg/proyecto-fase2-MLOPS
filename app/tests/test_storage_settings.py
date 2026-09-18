@@ -86,3 +86,31 @@ def test_next_settings_load_observes_managed_yaml(monkeypatch, tmp_path):
     split_path.write_text("train: 0.5\nval: 0.3\ntest: 0.2\nseed: 71\n")
     config = load_splits_config(split_path)
     assert (config.train, config.val, config.test, config.seed) == (0.5, 0.3, 0.2, 71)
+
+
+def test_copilot_settings_are_optional_with_a_safe_default(monkeypatch):
+    set_required_env(monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("COPILOT_MODEL", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.anthropic_api_key is None
+    assert settings.copilot_model == "claude-opus-5"
+    assert settings.copilot_host == "127.0.0.1"
+    assert settings.copilot_port == 8000
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_blank_anthropic_api_key_means_not_configured(monkeypatch, blank):
+    # docker-compose pasa `${ANTHROPIC_API_KEY:-}` como cadena vacía si .env no la define.
+    set_required_env(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", blank)
+    assert Settings(_env_file=None).anthropic_api_key is None
+
+
+def test_anthropic_api_key_is_read_from_env_and_never_leaks_in_repr(monkeypatch):
+    set_required_env(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-secret")
+    settings = Settings(_env_file=None)
+    assert settings.anthropic_api_key.get_secret_value() == "sk-ant-test-secret"
+    assert "sk-ant-test-secret" not in repr(settings)
+    assert "sk-ant-test-secret" not in str(settings)

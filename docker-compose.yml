@@ -1,3 +1,15 @@
+# Variables que exige `storage.settings.Settings` (las usan `app` y `copilot`).
+x-pipeline-env: &pipeline-env
+  DATABASE_URL: mysql+pymysql://root:password@mariadb:3306/image_repo
+  MINIO_ENDPOINT: minio
+  MINIO_PORT: 9000
+  MINIO_USE_SSL: "false"
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?Define MINIO_ROOT_USER en .env}
+  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Define MINIO_ROOT_PASSWORD en .env}
+  MINIO_BUCKET: image-annotations
+  DATASET_DIR: /app/data/raw
+  REPORTS_DIR: /app/reports
+
 services:
   mariadb:
     image: mariadb:11
@@ -64,6 +76,7 @@ services:
         VITE_API_BASE_URL: /api
     depends_on:
       - backend
+      - copilot
     ports:
       - "8080:80"
     volumes:
@@ -78,16 +91,7 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
-    environment:
-      DATABASE_URL: mysql+pymysql://root:password@mariadb:3306/image_repo
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_USE_SSL: "false"
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?Define MINIO_ROOT_USER en .env}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Define MINIO_ROOT_PASSWORD en .env}
-      MINIO_BUCKET: image-annotations
-      DATASET_DIR: /app/data/raw
-      REPORTS_DIR: /app/reports
+    environment: *pipeline-env
     volumes:
       # Dataset real (anotaciones + imágenes), de solo lectura: el gate no
       # escribe ahí, solo lee. El pipeline Python nunca gestionó data/raw/
@@ -96,6 +100,24 @@ services:
       - ./reports:/app/reports
       - ./app/policies:/app/policies:ro
       - ./app/splits:/app/splits:ro
+    restart: on-failure:5
+
+  # P2-52: agente del Copilot (LLM + herramientas MCP de solo lectura). Misma
+  # imagen que `app`, otro comando. No se publica ningún puerto: solo nginx
+  # (servicio `frontend`) lo alcanza, en /copilot-api/. Sin ANTHROPIC_API_KEY
+  # arranca igual y el chat responde 503 explicando qué falta.
+  copilot:
+    build: ./app
+    command: ["python", "-m", "copilot.server"]
+    environment:
+      <<: *pipeline-env
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      COPILOT_MODEL: ${COPILOT_MODEL:-claude-opus-5}
+      COPILOT_HOST: 0.0.0.0
+    volumes:
+      # Solo lectura: el Copilot consulta el dataset y los reportes, nunca escribe.
+      - ./data/raw:/app/data/raw:ro
+      - ./reports:/app/reports:ro
     restart: on-failure:5
 
 volumes:

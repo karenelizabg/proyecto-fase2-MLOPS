@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import SecretStr, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -76,7 +77,21 @@ class Settings(BaseSettings):
     reports_dir: Path
     dataset_version: str = "local-dev"
 
+    # Copilot (P2-52). Opcional: el gate y el resto del pipeline no la necesitan,
+    # así que su ausencia solo deshabilita el chat, no impide arrancar.
+    anthropic_api_key: SecretStr | None = None
+    copilot_model: str = "claude-opus-5"
+    # Escucha solo en loopback por defecto; docker-compose lo abre con COPILOT_HOST.
+    copilot_host: str = "127.0.0.1"
+    copilot_port: int = 8000
+
     quality: QualityPolicy
+
+    @field_validator("anthropic_api_key", mode="before")
+    @classmethod
+    def blank_api_key_means_not_configured(cls, value: Any) -> Any:
+        """docker-compose expande `${ANTHROPIC_API_KEY:-}` a "" cuando .env no la define."""
+        return None if isinstance(value, str) and not value.strip() else value
 
     @classmethod
     def settings_customise_sources(
