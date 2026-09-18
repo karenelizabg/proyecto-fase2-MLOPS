@@ -82,7 +82,8 @@ se admiten negativos, que `random.Random` maneja de forma determinista.
 
 IDs, categorías y componentes se ordenan canónicamente. Un `Random(seed)` local
 solo resuelve empates, incluidos restos de redondeo iguales; no cambia el RNG
-global. La misma entrada, relaciones, bytes, configuración e implementación
+global. Este RNG se usa exclusivamente para desempates reproducibles del dataset,
+no para seguridad, secretos, tokens ni criptografía. La misma entrada, relaciones, bytes, configuración e implementación
 producen exactamente el mismo resultado, incluso si se reordenan las listas COCO,
 el mapping de bytes o los pares. No se promete idéntica asignación si cambia
 el dataset, los pares detectados, la política de pHash o el algoritmo. Una semilla

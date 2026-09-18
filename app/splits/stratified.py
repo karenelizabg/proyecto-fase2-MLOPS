@@ -64,6 +64,11 @@ def verify_assignment(
     expected = set(image_ids)
     if len(expected) != len(image_ids):
         raise ValueError("Duplicate image IDs in input")
+    owner = _assignment_owners(assignments, expected)
+    _verify_groups(duplicate_groups, expected, owner)
+
+
+def _assignment_owners(assignments, expected):
     owner = {}
     for name in SPLIT_NAMES:
         if not assignments[name]:
@@ -76,6 +81,10 @@ def verify_assignment(
             owner[image_id] = name
     if set(owner) != expected:
         raise ValueError("Assignment does not cover all input images")
+    return owner
+
+
+def _verify_groups(duplicate_groups, expected, owner):
     grouped = set()
     for group in duplicate_groups:
         if not group:
@@ -106,6 +115,15 @@ def _groups(coco, image_contents, duplicate_pairs):
         a, b = root(a), root(b)
         parent[max(a, b)] = min(a, b)
 
+    _merge_content(coco, image_contents, union)
+    _merge_pairs(duplicate_pairs, parent, union)
+    components = {}
+    for i in ids:
+        components.setdefault(root(i), []).append(i)
+    return tuple(sorted(tuple(group) for group in components.values()))
+
+
+def _merge_content(coco, image_contents, union):
     by_hash, by_filename = {}, {}
     for image in sorted(coco.images, key=lambda image: image.id):
         content = image_contents[image.id]
@@ -115,17 +133,24 @@ def _groups(coco, image_contents, duplicate_pairs):
         if digest in by_hash:
             union(image.id, by_hash[digest])
         by_hash[digest] = image.id
-        # One filename resolves to one file under the caller's dataset root.
-        if image.file_name in by_filename:
-            previous_id, previous_digest = by_filename[image.file_name]
-            if previous_digest != digest:
-                raise ValueError(
-                    f"Conflicting content for file_name {image.file_name!r}: "
-                    f"image IDs {previous_id} and {image.id}"
-                )
-            union(image.id, previous_id)
-        else:
-            by_filename[image.file_name] = (image.id, digest)
+        _merge_filename(image, digest, by_filename, union)
+
+
+def _merge_filename(image, digest, by_filename, union):
+    # One filename resolves to one file under the caller's dataset root.
+    if image.file_name in by_filename:
+        previous_id, previous_digest = by_filename[image.file_name]
+        if previous_digest != digest:
+            raise ValueError(
+                f"Conflicting content for file_name {image.file_name!r}: "
+                f"image IDs {previous_id} and {image.id}"
+            )
+        union(image.id, previous_id)
+    else:
+        by_filename[image.file_name] = (image.id, digest)
+
+
+def _merge_pairs(duplicate_pairs, parent, union):
     for pair in duplicate_pairs:
         if not isinstance(pair, Mapping) or not {"image_id_a", "image_id_b"} <= pair.keys():
             raise ValueError("Each duplicate pair requires image_id_a and image_id_b")
@@ -135,10 +160,6 @@ def _groups(coco, image_contents, duplicate_pairs):
         if a == b:
             raise ValueError("A duplicate pair must reference two distinct images")
         union(a, b)
-    components = {}
-    for i in ids:
-        components.setdefault(root(i), []).append(i)
-    return tuple(sorted(tuple(group) for group in components.values()))
 
 
 def split_dataset(
@@ -173,6 +194,7 @@ def split_dataset(
     ratios = {name: value / total_ratio for name, value in ratios.items()}
     targets = {name: ratios[name] * len(ids) for name in SPLIT_NAMES}
     target_sizes = {name: int(targets[name]) for name in SPLIT_NAMES}
+    # Dataset tie-breaking only; never used for secrets, tokens or cryptography.
     rng = Random(config.seed)
 
     def choose_tie(items):
@@ -198,6 +220,21 @@ def split_dataset(
             delta += ((error + direction * count) ** 2 - error**2) / totals[c]
         return delta
 
+    _assign_initial(groups, totals, group_counts, assignments, counts, cost, choose_tie)
+    _improve_assignment(groups, assignments, counts, group_counts, cost, choose_tie)
+
+    result = SplitResult(
+        assignments={name: tuple(sorted(values)) for name, values in assignments.items()},
+        groups=groups,
+        target_sizes=target_sizes,
+        class_counts={name: {c: counts[name][c] for c in category_ids} for name in SPLIT_NAMES},
+        target_class_counts=target_classes,
+    )
+    verify_assignment(result.assignments, image_ids=ids, duplicate_groups=groups)
+    return result
+
+
+def _assign_initial(groups, totals, group_counts, assignments, counts, cost, choose_tie):
     pending = list(groups)
     remaining = totals.copy()
     while pending:
@@ -224,19 +261,27 @@ def split_dataset(
         counts[name].update(group_counts[group])
         remaining.subtract(group_counts[group])
         pending.remove(group)
+
+
+def _improving_moves(groups, assignments, cost):
+    moves = []
+    for group in groups:
+        source = next(name for name in SPLIT_NAMES if group[0] in assignments[name])
+        if len(assignments[source]) == len(group):
+            continue
+        for destination in SPLIT_NAMES:
+            if destination != source:
+                delta = cost(source, group, -1) + cost(destination, group)
+                if delta < -1e-12:
+                    moves.append((delta, group, source, destination))
+    return moves
+
+
+def _improve_assignment(groups, assignments, counts, group_counts, cost, choose_tie):
     # Whole-group moves repair avoidable rounding/greedy imbalance. Each move
     # strictly reduces the objective and preserves non-empty splits; no group splits.
     while True:
-        moves = []
-        for group in groups:
-            source = next(name for name in SPLIT_NAMES if group[0] in assignments[name])
-            if len(assignments[source]) == len(group):
-                continue
-            for destination in SPLIT_NAMES:
-                if destination != source:
-                    delta = cost(source, group, -1) + cost(destination, group)
-                    if delta < -1e-12:
-                        moves.append((delta, group, source, destination))
+        moves = _improving_moves(groups, assignments, cost)
         if not moves:
             break
         best_delta = min(move[0] for move in moves)
@@ -248,13 +293,3 @@ def split_dataset(
         assignments[destination].extend(group)
         counts[source].subtract(group_counts[group])
         counts[destination].update(group_counts[group])
-
-    result = SplitResult(
-        assignments={name: tuple(sorted(values)) for name, values in assignments.items()},
-        groups=groups,
-        target_sizes=target_sizes,
-        class_counts={name: {c: counts[name][c] for c in category_ids} for name in SPLIT_NAMES},
-        target_class_counts=target_classes,
-    )
-    verify_assignment(result.assignments, image_ids=ids, duplicate_groups=groups)
-    return result

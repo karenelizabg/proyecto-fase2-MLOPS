@@ -238,16 +238,21 @@ def test_duplicate_ids_and_unknown_references_are_rejected():
     ],
 )
 def test_invalid_duplicate_relations_fail_explicitly(pair):
+    coco = dataset([[1]] * 4)
+    cfg = config()
+    pairs = [pair]
     with pytest.raises(ValueError):
-        run(dataset([[1]] * 4), pairs=[pair])
+        run(coco, cfg, pairs=pairs)
 
 
 @pytest.mark.parametrize(
     "contents", [{0: b"a"}, {0: b"a", 1: b"b", 2: b""}, {0: b"a", 1: b"b", 2: "not bytes"}]
 )
 def test_missing_or_invalid_contents_are_not_silently_ignored(contents):
+    coco = dataset([[1]] * 3)
+    cfg = config()
     with pytest.raises(ValueError):
-        run(dataset([[1]] * 3), contents=contents)
+        run(coco, cfg, contents=contents)
 
 
 def test_unannotated_rare_and_empty_categories():
@@ -270,13 +275,18 @@ def test_large_group_preserved_even_when_ratios_cannot_be_met():
 
 @pytest.mark.parametrize("count", [1, 2])
 def test_too_few_images_fail(count):
+    coco = dataset([[1]] * count)
+    cfg = config()
     with pytest.raises(ValueError, match="three independent"):
-        run(dataset([[1]] * count))
+        run(coco, cfg)
 
 
 def test_too_few_groups_fail_even_with_many_images():
+    coco = dataset([[1]] * 8)
+    cfg = config()
+    contents = {i: b"same content" for i in range(8)}
     with pytest.raises(ValueError, match="three independent"):
-        run(dataset([[1]] * 8), contents={i: b"same content" for i in range(8)})
+        run(coco, cfg, contents=contents)
 
 
 def test_three_groups_with_tiny_ratios_still_make_nonempty_splits():
@@ -293,7 +303,9 @@ def test_no_mutation_and_report_round_trip_v1():
     contents = {i: str(i).encode() for i in range(6)}
     before = deepcopy((coco, cfg, pairs, contents))
     result = run(coco, cfg, pairs, contents)
-    assert (coco, cfg, pairs, contents) == before
+    actual = (coco, cfg, pairs, contents)
+    expected = before
+    assert actual == expected
     report = build_splits_report(result, dataset_version="test-v1")
     assert report.schema_version == "1.0"
     assert report.total_images == 6
@@ -336,7 +348,9 @@ def test_existing_config_rejects_invalid_seed_ratios_and_names(overrides):
 
 def test_negative_integer_seed_is_reproducible():
     coco = dataset([[1], [2], []] * 3)
-    assert run(coco, config(seed=-7)) == run(coco, config(seed=-7))
+    expected = run(coco, config(seed=-7))
+    actual = run(coco, config(seed=-7))
+    assert actual == expected
 
 
 @pytest.mark.parametrize(
@@ -443,3 +457,19 @@ def test_improvement_executes_and_preserves_all_assignment_invariants(monkeypatc
     assert owner(result, 0) == owner(result, 1)
     assert_counts_match_original_coco(coco, result)
     verify_assignment(result.assignments, image_ids=list(range(20)), duplicate_groups=result.groups)
+
+
+@pytest.mark.parametrize(
+    "seed_value, expected",
+    [
+        (1, {"train": (0, 2, 4, 6, 8, 9), "val": (1, 5), "test": (3, 7)}),
+        (42, {"train": (0, 1, 3, 5, 6, 7), "val": (2, 9), "test": (4, 8)}),
+        (-7, {"train": (0, 3, 4, 5, 6, 7), "val": (1, 9), "test": (2, 8)}),
+    ],
+)
+def test_assignments_match_pre_sonar_refactor_reference(seed_value, expected):
+    # Captured from commit 470b603 before extracting helpers; expectations are
+    # deliberately fixed, not recomputed using the implementation under test.
+    coco = dataset([[1]] * 5 + [[2]] * 5)
+    actual = dict(run(coco, config(seed=seed_value)).assignments)
+    assert actual == expected
