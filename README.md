@@ -781,6 +781,11 @@ el mismo MariaDB y el mismo MinIO del portal (mismas credenciales de
 conectarse a ambos y queda a la espera de que los siguientes frentes
 implementen la lógica de cada tier.
 
+El servicio `copilot` (P2-52) usa la misma imagen que `app` y atiende el chat
+de la pantalla Copilot a través de nginx (`/copilot-api/`), sin publicar
+puertos. Necesita `ANTHROPIC_API_KEY` en `.env` (opcional: sin ella todo
+arranca y el chat explica qué falta). Detalles en `app/copilot/README.md`.
+
 ### Python y lockfile
 
 `app/pyproject.toml` fija `requires-python = "==3.12.*"` y `app/Dockerfile`

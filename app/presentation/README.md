@@ -239,15 +239,18 @@ sus resultados de calidad, sin poder modificar nada:
 
 | Herramienta | Qué devuelve |
 |---|---|
-| `get_dataset_summary` | Total de imágenes/anotaciones y conteo por categoría, calculado desde `data/raw/annotations/` real (vía `ingestion.loader`, igual que el gate). |
-| `get_quality_report` | El `quality.json` real que escribió `gate.py` — `{"available": false, "reason": ...}` si el gate no ha corrido todavía. |
-| `get_check_result` | Un check específico por nombre; `{"available": false, ...}` si no existe ese check o el reporte no existe. |
-| `get_splits_report` | `splits.json`, si ya existe (no lo produce ningún tier todavía). |
-| `get_versions_report` | `versions.json`, si ya existe (tampoco existe todavía). |
+| `get_dataset_summary` | Total de imágenes/anotaciones y conteo por categoría, calculado desde `data/raw/annotations/` real (vía `ingestion.loader`, igual que el gate), más su `dataset_version`; `{"available": false, ...}` si el dataset no está en este entorno (falta `dvc pull`). |
+| `get_quality_report` | Sin argumentos, el `quality.json` vigente que escribió `gate.py` (copia de trabajo, `dataset_version` suele ser `local-dev`). Con `dataset_version` (p. ej. `v0.1.0`), el reporte congelado de ese release. `{"available": false, "reason": ...}` si no existe. |
+| `get_check_result` | Un check específico por nombre del `quality.json` vigente, con el `dataset_version` de ese reporte; `{"available": false, ...}` si no existe ese check o el reporte no existe. |
+| `get_splits_report` | Los splits de un release cortado (P2-45): el de mayor versión semántica `vX.Y.Z`, o el indicado con `dataset_version` (el catálogo no tiene orden propio; si ninguna versión es semver no se adivina y se pide indicarla). `data.dataset_version` dice de cuál es. |
+| `get_versions_report` | El catálogo `versions.json` de releases cortados. |
 
-`splits`/`versions` devuelven `available: false` en vez de inventar datos
-o fallar — mismo principio que ya usa el frontend
-(`frontend/src/pipeline/dataSource.ts`) para los mismos dos contratos.
+Los splits no tienen una copia "vigente": solo existen dentro de un release
+(`reports/releases/<version>/splits.json`), por eso `get_splits_report` se
+resuelve a través del catálogo. Todas devuelven `available: false` en vez de
+inventar datos o fallar cuando el reporte, el catálogo o la versión pedida no
+existen — mismo principio que ya usa el frontend
+(`frontend/src/pipeline/dataSource.ts`).
 
 **Solo lectura, verificado en dos niveles:**
 1. Cada herramienta declara `ToolAnnotations(read_only_hint=True,
@@ -267,9 +270,9 @@ MINIO_SECRET_KEY=... MINIO_BUCKET=... DATASET_DIR=../data/raw REPORTS_DIR=../.re
 uv run python -m presentation.mcp_server   # stdio, para un cliente MCP local
 ```
 
-No se agregó ningún servicio nuevo a `docker-compose.yml`: el agente del
-Copilot que consumiría este servidor todavía no existe (es trabajo de un
-ticket posterior), así que por ahora se invoca manualmente vía stdio.
+El agente que consume este servidor es el Copilot de P2-52 (`app/copilot/`,
+ver su README): lo usa en proceso desde su propio servicio de `docker-compose.yml`.
+Este servidor sigue pudiendo invocarse a mano vía stdio, como arriba.
 
 ### P2-53: evaluación compartida y leakage
 

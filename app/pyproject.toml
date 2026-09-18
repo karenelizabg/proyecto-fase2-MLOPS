@@ -16,6 +16,9 @@ dependencies = [
     "mcp>=2.2.0",
     "numpy>=2,<3",
     "scikit-learn>=1.5,<2",
+    "anthropic>=1.7,<2",
+    "starlette>=1.6,<2",
+    "uvicorn>=0.53,<1",
 ]
 
 [dependency-groups]
@@ -26,13 +29,13 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-src = ["ingestion", "analyzers", "policies", "splits", "storage", "presentation", "tests"]
+src = ["ingestion", "analyzers", "policies", "splits", "storage", "presentation", "copilot", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["ingestion", "analyzers", "policies", "splits", "storage", "presentation"]
+known-first-party = ["ingestion", "analyzers", "policies", "splits", "storage", "presentation", "copilot"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

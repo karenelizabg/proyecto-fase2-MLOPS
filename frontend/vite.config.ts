@@ -21,6 +21,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },
+      // P2-52: agente del Copilot (`python -m copilot.server` en app/, puerto 8000).
+      "/copilot-api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/copilot-api/, ""),
+      },
     },
   },
 });
