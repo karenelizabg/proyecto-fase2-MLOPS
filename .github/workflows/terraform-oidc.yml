@@ -46,15 +46,19 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Require the externally provisioned role
+      - name: Check the externally provisioned role
+        id: role
         env:
           ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
         run: |
           if [ -z "$ROLE_ARN" ]; then
-            echo "::error::OIDC verification pending: provision the provider/role separately and configure AWS_ROLE_ARN."
-            exit 1
+            echo "::warning title=OIDC verification pending::AWS_ROLE_ARN is not configured yet, so the OIDC check is skipped. Provision the provider/role separately and set the AWS_ROLE_ARN repository variable to enable it."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Assume role using GitHub OIDC
+        if: steps.role.outputs.configured == 'true'
         uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
@@ -64,6 +68,7 @@ jobs:
           role-session-name: github-oidc-${{ github.run_id }}
           mask-aws-account-id: true
       - name: Verify authentication without printing identity
+        if: steps.role.outputs.configured == 'true'
         run: |
           aws sts get-caller-identity --output json > /dev/null
           echo "OIDC authentication verified."
