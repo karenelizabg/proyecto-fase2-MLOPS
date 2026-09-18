@@ -1,13 +1,12 @@
 import json
-from io import BytesIO
 
 import pytest
-from PIL import Image, ImageDraw
 
 from policies.models import load_quality_policy
 from presentation.contracts import QualityCheck, QualityReport
 from presentation.gate import build_quality_report, main, run
 from storage.settings import Settings
+from tests._dataset_fixtures import write_coco_dataset
 
 QUALITY_YAML = """
 min_images_per_class:
@@ -36,74 +35,6 @@ min_spatial_dispersion:
 """
 
 
-def _jpeg_bytes(seed):
-    """pHash mira estructura, no color plano: un cuadro sólido no basta para
-    que dos imágenes se vean distintas. Se dibuja un rectángulo en una
-    posición distinta por `seed` para dar estructura real."""
-    image = Image.new("RGB", (64, 64), color=(20, 20, 20))
-    draw = ImageDraw.Draw(image)
-    x0 = (seed * 11) % 40
-    y0 = (seed * 17) % 40
-    draw.rectangle([x0, y0, x0 + 20, y0 + 20], fill=(220, 220, 220))
-    buffer = BytesIO()
-    image.save(buffer, format="JPEG")
-    return buffer.getvalue()
-
-
-def _write_dataset(tmp_path, *, cats=2, dogs=2):
-    annotations_dir = tmp_path / "annotations"
-    images_dir = tmp_path / "images"
-    annotations_dir.mkdir(parents=True)
-    images_dir.mkdir(parents=True)
-
-    images, annotations = [], []
-    image_id = 1
-    ann_id = 1
-    seed = 0
-    for index in range(cats):
-        file_name = f"cat.{index}.jpg"
-        (images_dir / file_name).write_bytes(_jpeg_bytes(seed))
-        seed += 1
-        images.append({"id": image_id, "file_name": file_name, "width": 64, "height": 64})
-        annotations.append(
-            {
-                "id": ann_id,
-                "image_id": image_id,
-                "category_id": 4,
-                "bbox": [0, 0, 40, 40],
-                "area": 1600.0,
-                "iscrowd": 0,
-            }
-        )
-        image_id += 1
-        ann_id += 1
-    for index in range(dogs):
-        file_name = f"dog.{index}.jpg"
-        (images_dir / file_name).write_bytes(_jpeg_bytes(seed))
-        seed += 1
-        images.append({"id": image_id, "file_name": file_name, "width": 64, "height": 64})
-        annotations.append(
-            {
-                "id": ann_id,
-                "image_id": image_id,
-                "category_id": 3,
-                "bbox": [0, 0, 40, 40],
-                "area": 1600.0,
-                "iscrowd": 0,
-            }
-        )
-        image_id += 1
-        ann_id += 1
-
-    doc = {
-        "images": images,
-        "annotations": annotations,
-        "categories": [{"id": 3, "name": "dog"}, {"id": 4, "name": "cat"}],
-    }
-    (annotations_dir / "lote.json").write_text(json.dumps(doc), encoding="utf-8")
-    return tmp_path
-
-
 def _policy_path(tmp_path, min_images=2):
     path = tmp_path / "quality.yaml"
     path.write_text(QUALITY_YAML.format(min_images=min_images), encoding="utf-8")
@@ -111,7 +42,7 @@ def _policy_path(tmp_path, min_images=2):
 
 
 def test_report_has_six_checks_not_seven(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset")
+    dataset_dir = write_coco_dataset(tmp_path / "dataset")
     policy_path = _policy_path(tmp_path)
     policy = load_quality_policy(policy_path)
 
@@ -134,7 +65,7 @@ def test_report_has_six_checks_not_seven(tmp_path):
 
 
 def test_status_passed_when_everything_meets_threshold(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset", cats=2, dogs=2)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=2, dogs=2)
     policy_path = _policy_path(tmp_path, min_images=2)
     policy = load_quality_policy(policy_path)
 
@@ -145,7 +76,7 @@ def test_status_passed_when_everything_meets_threshold(tmp_path):
 
 
 def test_status_failed_when_a_fail_action_check_does_not_pass(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset", cats=2, dogs=2)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=2, dogs=2)
     # Umbral imposible: ninguna clase real tiene 99999 imágenes.
     policy_path = _policy_path(tmp_path, min_images=99999)
     policy = load_quality_policy(policy_path)
@@ -161,7 +92,7 @@ def test_warn_action_check_failing_sets_warning_status_and_does_not_block(tmp_pa
     """P2-31: un check `action: warn` que no pasa no debe comportarse como un
     `fail` — status debe ser "warning" (no "failed"), y main() debe devolver
     0 (no 1), aunque el warn quede registrado y siga siendo visible."""
-    dataset_dir = _write_dataset(tmp_path / "dataset", cats=1, dogs=2)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=1, dogs=2)
     policy_path = tmp_path / "quality.yaml"
     policy_path.write_text(
         """
@@ -239,7 +170,7 @@ def test_warn_only_report_does_not_block_main_exit_code(monkeypatch):
 
 
 def test_min_images_per_class_check_reports_classes_below_minimum(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset", cats=1, dogs=2)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=1, dogs=2)
     policy_path = _policy_path(tmp_path, min_images=2)
     policy = load_quality_policy(policy_path)
 
@@ -251,7 +182,7 @@ def test_min_images_per_class_check_reports_classes_below_minimum(tmp_path):
 
 
 def test_run_writes_quality_json(tmp_path, monkeypatch):
-    dataset_dir = _write_dataset(tmp_path / "dataset", cats=2, dogs=2)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=2, dogs=2)
     reports_dir = tmp_path / "reports"
     _policy_path(tmp_path, min_images=2)  # queda en tmp_path, no se usa: run() usa el real
 
@@ -275,7 +206,7 @@ def test_run_writes_quality_json(tmp_path, monkeypatch):
 
 
 def test_main_returns_nonzero_exit_code_when_failed(tmp_path, monkeypatch):
-    dataset_dir = _write_dataset(tmp_path / "dataset", cats=1, dogs=1)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=1, dogs=1)
     monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://u:p@localhost/db")
     monkeypatch.setenv("MINIO_ENDPOINT", "localhost")
     monkeypatch.setenv("MINIO_PORT", "9000")
@@ -305,7 +236,7 @@ def test_broken_policy_is_rejected_by_pydantic_not_a_key_error(tmp_path, bad_fie
 
 
 def test_p230_six_criteria_use_the_same_custom_policy(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset", cats=2, dogs=4)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=2, dogs=4)
     policy = load_quality_policy(_policy_path(tmp_path, min_images=2))
     policy.max_imbalance_ratio.threshold = 2.0
     policy.max_small_object_ratio.threshold = 1.0
@@ -354,7 +285,7 @@ def test_p230_six_criteria_use_the_same_custom_policy(tmp_path):
 
 
 def test_p230_phash_detection_is_not_a_pair_count_limit(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset", cats=1, dogs=1)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=1, dogs=1)
     images = dataset_dir / "images"
     (images / "dog.0.jpg").write_bytes((images / "cat.0.jpg").read_bytes())
     policy = load_quality_policy(_policy_path(tmp_path, min_images=1))
@@ -375,7 +306,7 @@ def test_p230_phash_detection_is_not_a_pair_count_limit(tmp_path):
 
 
 def test_p230_empty_category_cannot_pass_with_zero_ratio(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset", cats=0, dogs=2)
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=0, dogs=2)
     policy = load_quality_policy(_policy_path(tmp_path, min_images=1))
     report = build_quality_report(dataset_dir=dataset_dir, policy=policy, dataset_version="test-1")
     check = next(c for c in report.checks if c.check_name == "max_imbalance_ratio")
