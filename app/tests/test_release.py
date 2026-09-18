@@ -117,3 +117,76 @@ def test_diff_releases_rejects_unknown_version(tmp_path):
 
     with pytest.raises(ValueError, match="no existe"):
         diff_releases("v0.1.0", "v9.9.9", reports_dir=reports_dir)
+
+
+def test_release_injects_same_policy_and_custom_splits(monkeypatch, tmp_path):
+    from presentation import release as module
+    from splits.models import SplitsConfig
+
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=6, dogs=6)
+    policy = load_quality_policy(_policy_path(tmp_path))
+    policy.duplicate_similarity_threshold.threshold = 1.0
+    config = SplitsConfig(train=0.5, val=0.25, test=0.25, seed=73)
+    original_analyze = module.analyze_duplicates
+    original_split = module.split_dataset
+    original_build = module.build_quality_report
+    seen = {}
+
+    def analyze(contents, duplicate_config):
+        seen["threshold"] = duplicate_config.threshold
+        result = original_analyze(contents, duplicate_config)
+        seen["pairs"] = result.details["image_pairs"]
+        return result
+
+    def split(coco, passed_config, **kwargs):
+        assert passed_config is config
+        assert kwargs["duplicate_pairs"] == seen["pairs"]
+        result = original_split(coco, passed_config, **kwargs)
+        seen["targets"] = dict(result.target_sizes)
+        return result
+
+    def build(**kwargs):
+        assert kwargs["policy"] is policy
+        result = original_build(**kwargs)
+        check = next(c for c in result.checks if c.check_name == "duplicate_similarity_threshold")
+        assert check.details["similarity_threshold"] == 1.0
+        return result
+
+    def no_reload():
+        pytest.fail("Injected splits must not reload YAML")
+
+    monkeypatch.setattr(module, "load_splits_config", no_reload)
+    monkeypatch.setattr(module, "analyze_duplicates", analyze)
+    monkeypatch.setattr(module, "split_dataset", split)
+    monkeypatch.setattr(module, "build_quality_report", build)
+    module.cut_release(
+        "v0.2.0",
+        dataset_dir=dataset_dir,
+        reports_dir=tmp_path / "reports",
+        policy=policy,
+        splits_config=config,
+    )
+    assert seen["threshold"] == 1.0
+    assert sorted(seen["targets"].values()) == [3, 3, 6]
+
+
+def test_release_custom_similarity_changes_duplicate_components(tmp_path):
+    from presentation import release as module
+    from splits.models import SplitsConfig
+
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=3, dogs=3)
+    policy = load_quality_policy(_policy_path(tmp_path))
+    policy.duplicate_similarity_threshold.threshold = 0.0
+    # Similarity >= 0 joins all images transitively; no three non-empty splits
+    # are possible. The repository default 0.94 would not join all six.
+    config = SplitsConfig(train=0.5, val=0.25, test=0.25, seed=9)
+    reports_dir = tmp_path / "reports"
+    with pytest.raises(ValueError, match="at least three independent image groups"):
+        module.cut_release(
+            "v0.3.0",
+            dataset_dir=dataset_dir,
+            reports_dir=reports_dir,
+            policy=policy,
+            splits_config=config,
+        )
+    assert not (tmp_path / "reports" / "versions.json").exists()

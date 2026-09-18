@@ -1,10 +1,16 @@
 import 'dotenv/config';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 /**
  * Valida las variables de entorno usadas por la aplicación.
  */
 const envSchema = z.object({
+  PIPELINE_CONFIG_ROOT: z
+    .string()
+    .min(1)
+    .default(fileURLToPath(new URL('../../../app/', import.meta.url))),
+
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
   PORT: z.coerce.number().int().positive().default(3000),

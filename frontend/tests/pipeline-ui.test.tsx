@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
+import settingsFixture from "./fixtures/settings.json";
 
 const QUALITY_FIXTURE = {
   schema_version: "1.0",
@@ -72,6 +73,7 @@ function mockAllReportsAvailable() {
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string) => {
+      if (url === "/api/settings") return jsonResponse(settingsFixture);
       if (url === "/reports/quality.json") return jsonResponse(QUALITY_FIXTURE);
       if (url === "/reports/splits.json") return jsonResponse(SPLITS_FIXTURE);
       if (url === "/reports/versions.json") return jsonResponse(VERSIONS_FIXTURE);
@@ -131,8 +133,8 @@ describe("SPEC-PIPELINE-UI-001 - UI del pipeline contra los reportes reales (P2-
 
     fireEvent.click(screen.getByRole("link", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    // dataset activo también sale de versions.json
-    expect(await screen.findByText("demo-v1.0.0")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Seed reproducible")).toHaveValue(42);
+    expect(screen.queryByText("Dataset activo")).not.toBeInTheDocument();
   });
 
   it("/pipeline redirige a /pipeline/overview", async () => {

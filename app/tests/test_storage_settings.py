@@ -42,3 +42,47 @@ def test_non_numeric_port_is_rejected(monkeypatch):
     monkeypatch.setenv("MINIO_PORT", "not-a-port")
     with pytest.raises(ValidationError, match="minio_port"):
         Settings()
+
+
+@pytest.mark.parametrize("override", ['{"min_images_per_class": {"threshold": 999}}', "not-json"])
+def test_quality_env_cannot_override_managed_yaml(monkeypatch, override):
+    set_required_env(monkeypatch)
+    monkeypatch.setenv("QUALITY", override)
+    assert Settings().quality.min_images_per_class.threshold == 300
+
+
+def test_quality_dotenv_cannot_override_managed_yaml(monkeypatch, tmp_path):
+    set_required_env(monkeypatch)
+    env_file = tmp_path / ".env"
+    env_file.write_text("QUALITY=not-json\nDATASET_VERSION=dotenv-test\n", encoding="utf-8")
+    monkeypatch.delenv("DATASET_VERSION", raising=False)
+    settings = Settings(_env_file=env_file)
+    assert settings.quality.min_images_per_class.threshold == 300
+    assert settings.dataset_version == "dotenv-test"
+
+
+def test_next_settings_load_observes_managed_yaml(monkeypatch, tmp_path):
+    import yaml
+
+    import storage.settings as module
+    from policies.models import load_quality_policy
+    from splits.models import load_splits_config
+
+    set_required_env(monkeypatch)
+    policy = load_quality_policy()
+    directory = tmp_path / "policies"
+    directory.mkdir()
+    path = directory / "quality.yaml"
+    path.write_text(yaml.safe_dump(policy.model_dump()), encoding="utf-8")
+    monkeypatch.setattr(module, "APP_ROOT", tmp_path)
+    before = Settings()
+    policy.min_images_per_class.threshold = 77.0
+    path.write_text(yaml.safe_dump(policy.model_dump()), encoding="utf-8")
+    after = Settings()
+    assert before.quality.min_images_per_class.threshold == 300
+    assert after.quality.min_images_per_class.threshold == 77
+    assert load_quality_policy(path) == after.quality
+    split_path = tmp_path / "splits.yaml"
+    split_path.write_text("train: 0.5\nval: 0.3\ntest: 0.2\nseed: 71\n")
+    config = load_splits_config(split_path)
+    assert (config.train, config.val, config.test, config.seed) == (0.5, 0.3, 0.2, 71)
