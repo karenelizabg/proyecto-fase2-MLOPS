@@ -58,4 +58,5 @@ export { deleteImage, uploadImage } from './image-upload.service.js';
 // Parser de operadores de búsqueda (SPEC-SEARCH-001)
 export type { ParsedSearchQuery, SearchOperator } from './search-query.parser.js';
 export { parseSearchQuery } from './search-query.parser.js';
+export { createSettingsService } from './settings.service.js';
 export { initializeApplication } from './startup.service.js';

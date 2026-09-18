@@ -1,3 +1,4 @@
+import { CheckCriterion, CheckDetails } from "../components/CheckDetails";
 import { PageHeader } from "../components/PageHeader";
 import { ReportBoundary } from "../components/ReportBoundary";
 import { StatusBadge } from "../components/StatusBadge";
@@ -26,7 +27,9 @@ export function AnalyzersPage() {
                       <th className="px-5 py-3 font-medium">Check</th>
                       <th className="px-5 py-3 font-medium">Resultado</th>
                       <th className="px-5 py-3 font-medium">Métrica</th>
+                      <th className="px-5 py-3 font-medium">Criterio</th>
                       <th className="px-5 py-3 font-medium">Acción si falla</th>
+                      <th className="px-5 py-3 font-medium">Detalles</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -34,10 +37,21 @@ export function AnalyzersPage() {
                       <tr key={check.check_name}>
                         <td className="px-5 py-3 font-medium text-ink">{check.check_name}</td>
                         <td className="px-5 py-3">
-                          <StatusBadge label={check.passed ? "passed" : "failed"} />
+                          <StatusBadge label={check.passed ? "passed" : check.action} />
                         </td>
-                        <td className="px-5 py-3 text-ink-muted">{check.metric_value}</td>
+                        <td className="px-5 py-3 text-ink-muted">
+                          {check.check_name === "max_imbalance_ratio" &&
+                          check.details.ratio_defined === false
+                            ? "Indefinido: hay categorías sin imágenes"
+                            : check.metric_value}
+                        </td>
+                        <td className="px-5 py-3">
+                          <CheckCriterion check={check} />
+                        </td>
                         <td className="px-5 py-3 text-ink-muted">{check.action}</td>
+                        <td className="px-5 py-3">
+                          <CheckDetails check={check} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>

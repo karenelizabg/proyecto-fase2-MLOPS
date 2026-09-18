@@ -1,17 +1,17 @@
-import { qualityReportSchema, splitsReportSchema, versionsReportSchema } from "./schemas";
+import { useMemo } from "react";
+import type { ZodType } from "zod";
+import { projectionsReportSchema } from "./projectionSchemas";
+import type { QualityReport, SplitsReport } from "./schemas";
+import {
+  type DatasetRelease,
+  qualityReportSchema,
+  reportReferenceSchema,
+  splitsReportSchema,
+  versionsReportSchema,
+} from "./schemas";
 import { useReportFetch } from "./useReportFetch";
 
-/**
- * P2-22/23/24: fuente de datos real de las 6 pantallas del pipeline — lee
- * los reportes que escribe `app/presentation/gate.py` (ver
- * docker-compose.yml). Reemplaza los ejemplos estáticos de P2-14.
- *
- * `quality.json` lo escribe el gate en cada arranque de `app`. `splits.json`
- * y `versions.json` todavía no los produce nada (splits/versionado son
- * tiers futuros) — sus hooks devuelven `status: "error"` honesto (404) en
- * vez de datos inventados; cada pantalla decide cómo mostrarlo.
- */
-
+/** Real reports published from the repository reports directory. */
 export function useQualityReport() {
   return useReportFetch("/reports/quality.json", qualityReportSchema);
 }
@@ -22,4 +22,35 @@ export function useSplitsReport() {
 
 export function useVersionsReport() {
   return useReportFetch("/reports/versions.json", versionsReportSchema);
+}
+
+/** References are validated again at the request boundary, before any fetch. */
+export function useReleaseReport(
+  kind: "quality",
+  release: DatasetRelease
+): ReturnType<typeof useQualityReport>;
+export function useReleaseReport(
+  kind: "splits",
+  release: DatasetRelease
+): ReturnType<typeof useSplitsReport>;
+export function useReleaseReport(kind: "quality" | "splits", release: DatasetRelease) {
+  const reference = release[`${kind}_file`];
+  const parsed = reportReferenceSchema(`${kind}.json`).safeParse(reference);
+  const schema = useMemo(
+    () =>
+      (
+        (kind === "quality" ? qualityReportSchema : splitsReportSchema) as ZodType<
+          QualityReport | SplitsReport
+        >
+      ).refine(
+        (report) => report.dataset_version === release.dataset_version,
+        "La versión del reporte no coincide con el catálogo"
+      ),
+    [kind, release.dataset_version]
+  );
+  return useReportFetch(parsed.success ? `/reports/${parsed.data}` : null, schema);
+}
+
+export function useProjectionsReport() {
+  return useReportFetch("/reports/projections.json", projectionsReportSchema);
 }

@@ -49,3 +49,112 @@ stages:
       hash: md5
       md5: fe2f58e89afe1c436a0bbc9a43ba0452
       size: 21982
+  projections:
+    cmd: uv run python dvc_projections_stage.py
+    deps:
+    - path: ../data/raw/annotations
+      hash: md5
+      md5: 8bd7d8e8f4dcb65edf95d8f38822cc53.dir
+      size: 257094
+      nfiles: 10
+    - path: ../data/raw/images
+      hash: md5
+      md5: 951150dd4fb053f4665089fcb37a1c87.dir
+      size: 13556278
+      nfiles: 600
+    - path: analyzers/base.py
+      hash: md5
+      md5: 20e5bf946dc5c89373db4fcf3a1b4c40
+      size: 229
+    - path: dvc_projections_stage.py
+      hash: md5
+      md5: f91eb11904bd329dfc9eff77a7795672
+      size: 1080
+    - path: ingestion/__init__.py
+      hash: md5
+      md5: 348c29beb25cb2c7bdd00120146d1ec6
+      size: 220
+    - path: ingestion/loader.py
+      hash: md5
+      md5: ef5e6cf0ef2d082b0a86aae488b1469b
+      size: 2717
+    - path: ingestion/models.py
+      hash: md5
+      md5: bd165d23ec0be422d3cf789ac3da6bda
+      size: 3206
+    - path: policies/models.py
+      hash: md5
+      md5: 74bf2de1b7d3ad7d5749c46a42fc1743
+      size: 1405
+    - path: policies/quality.yaml
+      hash: md5
+      md5: 6b7ed64be85828614dac8a1341a3b91f
+      size: 1264
+    - path: presentation/__init__.py
+      hash: md5
+      md5: 7867f173e84e7d9c8bf8c089532208dd
+      size: 223
+    - path: presentation/contracts.py
+      hash: md5
+      md5: 044853f0d9806b1d12af1e414dfb4ccc
+      size: 3559
+    - path: presentation/projections.py
+      hash: md5
+      md5: 009933c417b69be2b7b4c76db9f81b64
+      size: 4233
+    - path: presentation/projections_contracts.py
+      hash: md5
+      md5: a6e9fae2f8ce872ed1e8be92e4ea721f
+      size: 3223
+    - path: projections/__init__.py
+      hash: md5
+      md5: 9eb98c01fe1aecc710255729eabb8825
+      size: 90
+    - path: projections/compute.py
+      hash: md5
+      md5: 92b039ea7864665c947ed8629bfa32cf
+      size: 4089
+    - path: projections/models.py
+      hash: md5
+      md5: 7174a3f3dcc49d075ea63c4e349f31ab
+      size: 2276
+    - path: pyproject.toml
+      hash: md5
+      md5: e26228aea5b8ed3f1f16396f9542fed5
+      size: 914
+    - path: storage/settings.py
+      hash: md5
+      md5: 7bd2bd600f52d2adb32fafa92abf79b8
+      size: 3360
+    - path: uv.lock
+      hash: md5
+      md5: 3e8388d6b3b8a44a537e2873cb54b706
+      size: 105468
+    params:
+      projections/projections.yaml:
+        dataset_version: local-dev
+        features:
+          representation: rgb_pixels
+          width: 16
+          height: 16
+          channels: 3
+          resize_filter: LANCZOS
+          exif_orientation: transpose
+          normalization: divide_by_255
+        pca:
+          n_components: 2
+          svd_solver: full
+          whiten: false
+        tsne:
+          n_components: 2
+          random_state: 42
+          init: pca
+          learning_rate: auto
+          max_iter: 1000
+          perplexity: 30.0
+          method: barnes_hut
+    outs:
+    - path: ../reports/projections.json
+      hash: md5
+      md5: b2a0026be8ddf0c6928acdc35bd6f267
+      size: 230987

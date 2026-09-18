@@ -4,6 +4,7 @@ import { env } from '../config/env.js';
 import {
   checkHealth,
   createAnnotationForImage,
+  createSettingsService,
   deleteAnnotation,
   deleteImage,
   exportCocoDataset,
@@ -63,6 +64,31 @@ const app = express();
 const port = env.PORT;
 
 app.use(express.json());
+const settingsService = createSettingsService(env.PIPELINE_CONFIG_ROOT);
+
+app.get('/settings', async (_req, res) => {
+  try {
+    res.json(await settingsService.get());
+  } catch (error) {
+    sendError(res, error, 'No se pudo leer la configuración.');
+  }
+});
+
+app.put('/settings/quality', async (req, res) => {
+  try {
+    res.json(await settingsService.saveQuality(req.body));
+  } catch (error) {
+    sendError(res, error, 'No se pudo guardar la política de calidad.');
+  }
+});
+
+app.put('/settings/splits', async (req, res) => {
+  try {
+    res.json(await settingsService.saveSplits(req.body));
+  } catch (error) {
+    sendError(res, error, 'No se pudo guardar la configuración de splits.');
+  }
+});
 
 /**
  * Multer mantiene temporalmente la imagen en memoria.

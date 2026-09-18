@@ -18,6 +18,7 @@ COPY policies/ ./policies/
 COPY splits/ ./splits/
 COPY storage/ ./storage/
 COPY presentation/ ./presentation/
+COPY projections/ ./projections/
 
 # El volumen nombrado reports_data (docker-compose.yml) se inicializa la
 # primera vez con el contenido/dueño de este directorio si ya existe en la

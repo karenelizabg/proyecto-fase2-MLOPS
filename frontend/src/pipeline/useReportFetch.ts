@@ -17,12 +17,19 @@ type FetchState<T> =
  * caso esperado (el contrato todavía no existe, p. ej. splits.json antes
  * de que exista el algoritmo de splits), no una falla de red distinta.
  */
-export function useReportFetch<T>(url: string, schema: ZodType<T>) {
+export function useReportFetch<T>(url: string | null, schema: ZodType<T>) {
   const [state, setState] = useState<FetchState<T>>({ status: "loading" });
 
   const load = useCallback(() => {
     let cancelled = false;
     setState({ status: "loading" });
+
+    if (url === null) {
+      setState({ status: "error", message: "Referencia de reporte inválida." });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     fetch(url)
       .then(async (res) => {

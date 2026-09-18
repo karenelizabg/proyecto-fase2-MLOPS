@@ -7,6 +7,7 @@ import { SearchPage } from "@/pages/SearchPage";
 import { AnalyzersPage } from "@/pipeline/pages/Analyzers";
 import { CopilotPage } from "@/pipeline/pages/Copilot";
 import { OverviewPage } from "@/pipeline/pages/Overview";
+import { ProjectionsPage } from "@/pipeline/pages/Projections";
 import { SettingsPage } from "@/pipeline/pages/Settings";
 import { SplitsPage } from "@/pipeline/pages/Splits";
 import { VersionsPage } from "@/pipeline/pages/Versions";
@@ -92,6 +93,14 @@ export function App(): JSX.Element {
         }
       />
 
+      <Route
+        path="/pipeline/projections"
+        element={
+          <AppLayout>
+            <ProjectionsPage />
+          </AppLayout>
+        }
+      />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );

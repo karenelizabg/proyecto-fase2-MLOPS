@@ -19,7 +19,12 @@ from typing import Any
 
 import yaml
 from pydantic.fields import FieldInfo
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 from policies.models import QualityPolicy
 
@@ -42,6 +47,14 @@ class YamlSectionSource(PydanticBaseSettingsSource):
             return {}
         raw = yaml.safe_load(self._yaml_path.read_text(encoding="utf-8"))
         return {self._field_name: raw}
+
+
+def _infrastructure_source(source: EnvSettingsSource) -> EnvSettingsSource:
+    """Keep original source options, excluding QUALITY before JSON decoding."""
+    source.env_vars = {
+        key: value for key, value in source.env_vars.items() if key.lower() != "quality"
+    }
+    return source
 
 
 class Settings(BaseSettings):
@@ -76,8 +89,8 @@ class Settings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         return (
             init_settings,
-            env_settings,
-            dotenv_settings,
+            _infrastructure_source(env_settings),
+            _infrastructure_source(dotenv_settings),
             YamlSectionSource(
                 settings_cls,
                 field_name="quality",

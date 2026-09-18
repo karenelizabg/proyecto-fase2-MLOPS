@@ -813,3 +813,55 @@ son fáciles de mover porque todo el pipeline está aislado en `app/`:
   infraestructura de datos en dev.
 - Quién es responsable del frente 4 (compuerta) no estaba claro en el
   reparto compartido — confirmar con Karen.
+
+## P2-36 — Settings persistente
+
+`/pipeline/settings` tiene dos formularios independientes. La API Node
+existente ofrece `GET /settings`, `PUT /settings/quality` y
+`PUT /settings/splits` (desde el navegador, `/api/settings/...`).
+
+- Quality permite editar threshold/action de los seis checks reales y
+  width_px/height_px de objetos pequeños. La similitud pHash es un umbral de
+  detección; el cumplimiento sigue exigiendo cero pares.
+- Splits permite editar train/val/test (fracciones estrictamente entre 0 y 1,
+  suma 1 con tolerancia 1e-6) y seed (entero seguro de JavaScript).
+- `cross_split_leakage` se preserva sin exponerlo. No se publican credenciales,
+  rutas, variables de infraestructura ni una supuesta versión activa.
+- GET devuelve `{quality, splits}`. Cada PUT recibe directamente su sección
+  completa y devuelve esa sección validada. Campos desconocidos o valores
+  inválidos producen 400; los errores internos producen 500.
+- Persisten en `app/policies/quality.yaml` y `app/splits/splits.yaml`. Se
+  conservan comentarios y campos no editables; el backend escribe un temporal,
+  sincroniza/cierra y renombra en el mismo directorio. Serializa escrituras
+  dentro de su proceso. No hay transacción entre ambos archivos ni control de
+  edición obsoleta: la última escritura válida gana.
+
+Guardar **no ejecuta el pipeline**, no crea releases y no cambia reportes
+existentes. Los valores afectan la siguiente ejecución de quality/release.
+El contenedor Python ejecuta el gate al arrancar, no observa archivos para
+recalcular automáticamente. Los comandos de pipeline/release existentes
+siguen siendo operaciones explícitas.
+
+Compose comparte los directorios de políticas y splits: backend RW bajo
+`/pipeline`, Python RO bajo `/app`. No se publican mediante Nginx. Se montan
+directorios para que los reemplazos atómicos sean visibles. En desarrollo,
+el backend resuelve el directorio `app/` hermano; `PIPELINE_CONFIG_ROOT` es
+una opción de despliegue confiable, nunca un parámetro HTTP.
+
+Python carga la política YAML al construir Settings. `QUALITY` del entorno
+o de `.env` se ignora, incluso si contiene JSON inválido: no puede sustituir
+silenciosamente la política gestionada por UI. El resto de variables de
+infraestructura conserva su semántica. Una política inyectada explícitamente
+por código sigue siendo válida para tests/operaciones explícitas.
+Cada release recibe una política para quality y pHash, y una SplitsConfig
+cargada una vez; ya no recarga otra política para agrupar duplicados.
+
+Estos YAML siguen siendo configuración versionada en Git; guardar puede
+dejar cambios locales que deben revisarse. DVC ya observa `policies/` para
+quality_gate; no se añade ningún stage. Cambiar splits afecta el próximo
+corte de release, no reescribe los splits congelados.
+
+Se añadió `yaml` como dependencia directa del backend para leer/escribir
+YAML sin un parser artesanal. El backend actual no tiene autenticación ni
+autorización: esta edición está destinada al despliegue controlado existente,
+no constituye un panel administrativo protegido para exposición pública.
