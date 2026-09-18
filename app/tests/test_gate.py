@@ -5,6 +5,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 from policies.models import load_quality_policy
+from presentation.contracts import QualityCheck, QualityReport
 from presentation.gate import build_quality_report, main, run
 from storage.settings import Settings
 
@@ -155,6 +156,86 @@ def test_status_failed_when_a_fail_action_check_does_not_pass(tmp_path):
     assert report.status == "failed"
     min_images_check = next(c for c in report.checks if c.check_name == "min_images_per_class")
     assert not min_images_check.passed
+
+
+def test_warn_action_check_failing_sets_warning_status_and_does_not_block(tmp_path):
+    """P2-31: un check `action: warn` que no pasa no debe comportarse como un
+    `fail` — status debe ser "warning" (no "failed"), y main() debe devolver
+    0 (no 1), aunque el warn quede registrado y siga siendo visible."""
+    dataset_dir = _write_dataset(tmp_path / "dataset", cats=1, dogs=2)
+    policy_path = tmp_path / "quality.yaml"
+    policy_path.write_text(
+        """
+min_images_per_class:
+  threshold: 1
+  action: fail
+max_imbalance_ratio:
+  threshold: 1.0
+  action: warn
+max_small_object_ratio:
+  threshold: 0.99
+  width_px: 1
+  height_px: 1
+  action: warn
+degenerate_boxes:
+  threshold: 0
+  action: fail
+cross_split_leakage:
+  threshold: 0
+  action: fail
+duplicate_similarity_threshold:
+  threshold: 0.999
+  action: warn
+""",
+        encoding="utf-8",
+    )
+    policy = load_quality_policy(policy_path)
+
+    report = build_quality_report(
+        dataset_dir=dataset_dir, policy=policy, dataset_version="test-1", policy_path=policy_path
+    )
+
+    # 1 gato / 2 perros con umbral de imbalance 1.0: ratio 2/1=2 > 1.0 falla,
+    # pero es `action: warn`; ningún check `fail` falla (min_images pasa con
+    # umbral 1, degenerate_boxes pasa porque las cajas son válidas).
+    imbalance_check = next(c for c in report.checks if c.check_name == "max_imbalance_ratio")
+    assert not imbalance_check.passed
+    assert imbalance_check.action == "warn"
+
+    fail_checks = [c for c in report.checks if c.action == "fail"]
+    assert all(c.passed for c in fail_checks), "ningún check fail debería estar fallando aquí"
+
+    # Criterio 2 y 4: el warn queda registrado y sigue diferenciado de un fail.
+    assert imbalance_check in report.checks
+    assert report.status != "failed"
+
+    # Criterio 3: el estado final refleja la advertencia, no un passed limpio.
+    assert report.status == "warning"
+
+
+def test_warn_only_report_does_not_block_main_exit_code(monkeypatch):
+    """P2-31 criterio 1: un warn no detiene la ejecución. Se mockea run()
+    (ya probado por separado) para no repetir I/O real ni tocar
+    policies/quality.yaml — solo se verifica la rama de main() para
+    status="warning", igual que test_main_returns_nonzero_exit_code_when_failed
+    verifica la rama para status="failed"."""
+    warn_only_report = QualityReport(
+        schema_version="1.0",
+        dataset_version="test-1",
+        status="warning",
+        checks=[
+            QualityCheck(
+                check_name="max_imbalance_ratio",
+                passed=False,
+                metric_value=2.0,
+                details={},
+                action="warn",
+            )
+        ],
+    )
+    monkeypatch.setattr("presentation.gate.run", lambda: warn_only_report)
+
+    assert main() == 0
 
 
 def test_min_images_per_class_check_reports_classes_below_minimum(tmp_path):

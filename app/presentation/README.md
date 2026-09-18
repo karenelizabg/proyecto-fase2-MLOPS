@@ -162,3 +162,23 @@ DATABASE_URL=... MINIO_ENDPOINT=... MINIO_PORT=... MINIO_ACCESS_KEY=... \
 MINIO_SECRET_KEY=... MINIO_BUCKET=... DATASET_DIR=../data/raw REPORTS_DIR=/tmp/reports \
 uv run python -m presentation.gate
 ```
+
+## P2-31 — "Warn no bloquea pero queda registrado"
+
+Ticket de verificación, no de implementación nueva: el comportamiento que
+pide (un `warn` no detiene el proceso, queda registrado en `quality.json`,
+el estado final lo refleja, y sigue diferenciado de un `fail` real) ya
+salió como consecuencia necesaria de cómo `build_quality_report()` calcula
+`status` arriba — nadie lo notó como su propio criterio hasta este ticket.
+No se cambió ninguna línea de lógica; se agregaron los dos tests que
+faltaban para probarlo explícitamente (el resto de los tests del gate solo
+cubrían el camino "todo pasa" o "algo `fail` no pasa"):
+
+- `test_warn_action_check_failing_sets_warning_status_and_does_not_block`:
+  un dataset con `max_imbalance_ratio` (acción `warn`) fallando y todo lo
+  demás (`action: fail`) pasando produce `status="warning"`, no `"failed"`,
+  y el check sigue apareciendo en `checks` con su `action` correcta.
+- `test_warn_only_report_does_not_block_main_exit_code`: con `run()`
+  mockeado (mismo patrón que `test_main_returns_nonzero_exit_code_when_failed`,
+  sin tocar `policies/quality.yaml` real ni repetir I/O), `main()` devuelve
+  `0` cuando `status="warning"`.
