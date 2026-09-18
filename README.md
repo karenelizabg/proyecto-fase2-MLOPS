@@ -35,6 +35,11 @@ errores tipados que la UI mapea a códigos HTTP:
 | `ValidationError` | 400  | Dato mal formado o regla de negocio violada  |
 | `NotFoundError`   | 404  | El recurso no existe en la base de datos     |
 
+## Contribuir
+
+Convención de ramas, commits y PR, qué valida el CI y cómo correrlo en tu máquina:
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Requisitos
 
 - Docker y Docker Compose

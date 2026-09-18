@@ -15,7 +15,7 @@ def test_default_seed_is_42():
 
 
 def test_ratios_not_summing_to_one_are_rejected():
-    with pytest.raises(ValidationError, match="sumar 1.0"):
+    with pytest.raises(ValidationError, match=r"sumar 1\.0"):
         SplitsConfig.model_validate({"train": 0.5, "val": 0.3, "test": 0.3})
 
 
