@@ -4,7 +4,6 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { UploadScreen } from "@/components/upload/UploadScreen";
 import { DashboardPage } from "@/pages/Dashboard";
 import { SearchPage } from "@/pages/SearchPage";
-import { PipelineLayout } from "@/pipeline/PipelineLayout";
 import { AnalyzersPage } from "@/pipeline/pages/Analyzers";
 import { CopilotPage } from "@/pipeline/pages/Copilot";
 import { OverviewPage } from "@/pipeline/pages/Overview";
@@ -40,56 +39,56 @@ export function App(): JSX.Element {
           nav global, con su propio botón "Volver". Ver GlobalNav.tsx. */}
       <Route path="/annotate/:imageId" element={<AnnotateScreen />} />
 
-      {/* P2-14: dashboard de calidad de dataset (Frente 7), con su propio
-          nav (PipelineNav) — producto distinto al portal de anotación de
-          arriba, ver PipelineLayout.tsx. */}
+      {/* P2-14: dashboard de calidad de dataset (Frente 7) — mismo portal,
+          mismo AppLayout/GlobalNav que el resto; no tiene nav ni shell
+          propio (ver GlobalNav.tsx). */}
       <Route path="/pipeline" element={<Navigate to="/pipeline/overview" replace />} />
       <Route
         path="/pipeline/overview"
         element={
-          <PipelineLayout>
+          <AppLayout>
             <OverviewPage />
-          </PipelineLayout>
+          </AppLayout>
         }
       />
       <Route
         path="/pipeline/analyzers"
         element={
-          <PipelineLayout>
+          <AppLayout>
             <AnalyzersPage />
-          </PipelineLayout>
+          </AppLayout>
         }
       />
       <Route
         path="/pipeline/splits"
         element={
-          <PipelineLayout>
+          <AppLayout>
             <SplitsPage />
-          </PipelineLayout>
+          </AppLayout>
         }
       />
       <Route
         path="/pipeline/versions"
         element={
-          <PipelineLayout>
+          <AppLayout>
             <VersionsPage />
-          </PipelineLayout>
+          </AppLayout>
         }
       />
       <Route
         path="/pipeline/copilot"
         element={
-          <PipelineLayout>
+          <AppLayout>
             <CopilotPage />
-          </PipelineLayout>
+          </AppLayout>
         }
       />
       <Route
         path="/pipeline/settings"
         element={
-          <PipelineLayout>
+          <AppLayout>
             <SettingsPage />
-          </PipelineLayout>
+          </AppLayout>
         }
       />
 
