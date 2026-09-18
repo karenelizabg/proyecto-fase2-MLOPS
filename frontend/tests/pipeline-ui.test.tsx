@@ -118,12 +118,13 @@ describe("SPEC-PIPELINE-UI-001 - UI del pipeline contra los reportes reales (P2-
 
     fireEvent.click(screen.getByRole("link", { name: "Splits" }));
     expect(await screen.findByRole("heading", { name: "Splits" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Release"), { target: { value: "demo-v1.0.0" } });
     // image_count de splits.json
     expect(await screen.findByText("840")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: "Versions" }));
     expect(await screen.findByRole("heading", { name: "Versions" })).toBeInTheDocument();
-    expect(await screen.findByText("demo-v1.0.0")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "demo-v1.0.0" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: "Copilot" }));
     expect(screen.getByRole("heading", { name: "Copilot" })).toBeInTheDocument();

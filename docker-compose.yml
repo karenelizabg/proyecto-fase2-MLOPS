@@ -65,7 +65,7 @@ services:
     volumes:
       # P2-22/23/24: el gate (servicio `app`) escribe reportes acá; nginx
       # los sirve como estático en /reports/*.json, sin backend HTTP nuevo.
-      - reports_data:/usr/share/nginx/html/reports:ro
+      - ./reports:/usr/share/nginx/html/reports:ro
 
   app:
     build: ./app
@@ -89,10 +89,9 @@ services:
       # escribe ahí, solo lee. El pipeline Python nunca gestionó data/raw/
       # como parte de su propia imagen (ver app/Dockerfile).
       - ./data/raw:/app/data/raw:ro
-      - reports_data:/app/reports
+      - ./reports:/app/reports
     restart: on-failure:5
 
 volumes:
   mariadb_data:
   minio_data:
-  reports_data:

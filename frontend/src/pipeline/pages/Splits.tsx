@@ -1,52 +1,52 @@
-import { StatCard } from "@/components/dashboard/StatCard";
+import { useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { ReportBoundary } from "../components/ReportBoundary";
-import { useSplitsReport } from "../dataSource";
-import type { SplitsReport } from "../schemas";
+import { SplitSummary } from "../components/SplitSummary";
+import { useReleaseReport, useVersionsReport } from "../dataSource";
+import type { DatasetRelease } from "../schemas";
 
-const SPLIT_LABELS: Record<keyof SplitsReport["splits"], string> = {
-  train: "Train",
-  validation: "Validation",
-  test: "Test",
-};
-
-const SPLIT_ACCENTS: Record<keyof SplitsReport["splits"], "lilac" | "blue" | "mint"> = {
-  train: "lilac",
-  validation: "blue",
-  test: "mint",
-};
+function SelectedSplits({ release }: Readonly<{ release: DatasetRelease }>) {
+  const state = useReleaseReport("splits", release);
+  return (
+    <ReportBoundary state={state}>{(report) => <SplitSummary report={report} />}</ReportBoundary>
+  );
+}
 
 export function SplitsPage() {
-  const splits = useSplitsReport();
-
+  const versions = useVersionsReport();
+  const [selected, setSelected] = useState("");
   return (
-    <main className="flex-1 px-6 py-6 lg:px-10 lg:py-8">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <ReportBoundary state={splits}>
-          {(report) => (
-            <>
-              <PageHeader
-                title="Splits"
-                subtitle={`${report.total_images.toLocaleString("es")} imágenes en el dataset ${report.dataset_version}`}
-              />
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                {(Object.keys(SPLIT_LABELS) as Array<keyof SplitsReport["splits"]>).map((key) => {
-                  const summary = report.splits[key];
-                  return (
-                    <StatCard
-                      key={key}
-                      label={`${SPLIT_LABELS[key]} (${Math.round(summary.ratio * 100)}%)`}
-                      value={summary.image_count}
-                      accent={SPLIT_ACCENTS[key]}
-                    />
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </ReportBoundary>
-      </div>
+    <main className="flex-1 px-6 py-6 lg:px-10">
+      <PageHeader title="Splits" subtitle="Conjuntos generados por release" />
+      <ReportBoundary state={versions}>
+        {(catalog) => {
+          const release = catalog.releases.find((entry) => entry.dataset_version === selected);
+          return (
+            <div className="mt-6 space-y-6">
+              {catalog.releases.length === 0 ? (
+                <p>No hay releases publicadas.</p>
+              ) : (
+                <>
+                  <label htmlFor="split-release">Release</label>
+                  <select
+                    id="split-release"
+                    value={selected}
+                    onChange={(event) => setSelected(event.target.value)}
+                  >
+                    <option value="">Selecciona una release</option>
+                    {catalog.releases.map((entry) => (
+                      <option key={entry.dataset_version} value={entry.dataset_version}>
+                        {entry.dataset_version}
+                      </option>
+                    ))}
+                  </select>
+                  {release && <SelectedSplits key={release.dataset_version} release={release} />}
+                </>
+              )}
+            </div>
+          );
+        }}
+      </ReportBoundary>
     </main>
   );
 }

@@ -33,26 +33,69 @@ const splitSummarySchema = z.object({
   ratio: z.number().min(0).max(1),
 });
 
-export const splitsReportSchema = z.object({
-  schema_version: z.literal("1.0"),
-  dataset_version: identifierSchema,
-  total_images: z.number().int().positive(),
-  splits: z.object({
-    train: splitSummarySchema,
-    validation: splitSummarySchema,
-    test: splitSummarySchema,
-  }),
-});
+export const splitsReportSchema = z
+  .object({
+    schema_version: z.literal("1.0"),
+    dataset_version: identifierSchema,
+    total_images: z.number().int().positive(),
+    splits: z.object({
+      train: splitSummarySchema,
+      validation: splitSummarySchema,
+      test: splitSummarySchema,
+    }),
+  })
+  .superRefine((report, context) => {
+    const entries = Object.entries(report.splits);
+    if (
+      entries.reduce((total, [, split]) => total + split.image_count, 0) !== report.total_images
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Los conteos deben sumar total_images",
+        path: ["splits"],
+      });
+    }
+    if (report.total_images <= 0) return;
+    for (const [name, split] of entries) {
+      // Python: math.isclose(rel_tol=0, abs_tol=1e-6).
+      if (Math.abs(split.ratio - split.image_count / report.total_images) > 1e-6) {
+        context.addIssue({
+          code: "custom",
+          message: "El ratio debe coincidir con image_count / total_images",
+          path: ["splits", name, "ratio"],
+        });
+      }
+    }
+  });
 export type SplitsReport = z.infer<typeof splitsReportSchema>;
 
-const datasetReleaseSchema = z.object({
+export function reportReferenceSchema(filename: string) {
+  return z.string().refine((value) => {
+    const parts = value.split("/");
+    return (
+      parts.at(-1) === filename &&
+      parts.every((part) => part !== "." && part !== ".." && /^[A-Za-z0-9._-]+$/.test(part))
+    );
+  }, "Referencia de reporte inválida");
+}
+
+export const datasetReleaseSchema = z.object({
   dataset_version: identifierSchema,
-  quality_file: z.string(),
-  splits_file: z.string(),
+  quality_file: reportReferenceSchema("quality.json"),
+  splits_file: reportReferenceSchema("splits.json"),
 });
 
-export const versionsReportSchema = z.object({
-  schema_version: z.literal("1.0"),
-  releases: z.array(datasetReleaseSchema),
-});
+export const versionsReportSchema = z
+  .object({
+    schema_version: z.literal("1.0"),
+    releases: z.array(datasetReleaseSchema),
+  })
+  .refine(
+    (report) =>
+      new Set(report.releases.map((release) => release.dataset_version)).size ===
+      report.releases.length,
+    "dataset_version debe ser único en el catálogo"
+  );
 export type VersionsReport = z.infer<typeof versionsReportSchema>;
+
+export type DatasetRelease = z.infer<typeof datasetReleaseSchema>;
