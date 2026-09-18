@@ -684,6 +684,51 @@ dvc repro
 - `dvc push`/`dvc pull` funcionan contra `dev` y `prod` (verificado: 612
   archivos sincronizados en `dev`, `prod` ya en uso durante todo el proyecto).
 
+## P2-45 — Versionado semántico y diff entre releases
+
+Depende de P2-42. Un release congela `dataset_version` (formato
+`vMAJOR.MINOR.PATCH`) junto con su `quality.json` y `splits.json` bajo
+`reports/releases/<version>/`, y agrega la entrada al catálogo
+`reports/versions.json` (`VersionsReport`, contrato v1.0 de P2-12).
+
+```bash
+# Desde app/, con las mismas variables placeholder que P2-42 (ver dvc_gate_stage.py):
+uv run python -m presentation.release cut v0.1.0
+uv run python -m presentation.release diff v0.1.0 v0.2.0
+```
+
+- **Content hash DEV/PROD**: el hash del dataset ya es el md5 en
+  `data/raw/annotations.dvc`/`data/raw/images.dvc` — el mismo valor sin
+  importar el remote, por construcción de DVC. Verificar que ambos
+  remotes lo tengan de verdad es `dvc status -r dev` y `dvc status -r
+  prod`, ambos reportando "Cache and remote 'X' are in sync." — no hace
+  falta recalcular nada; reimplementarlo sería redundante con lo que DVC
+  ya garantiza.
+- **`splits.json` nunca se había escrito a disco**: P2-32 dejó
+  `split_dataset()`/`build_splits_report()` puros a propósito (ver
+  `app/splits/README.md`, "antes de persistir artefactos hay que acordar
+  su ubicación/ignore o seguimiento DVC"), porque `DatasetRelease` exige
+  `quality_file` y `splits_file`, este ticket fue quien tuvo que decidirlo:
+  `reports/releases/<version>/splits.json`, escrito por `cut_release()`.
+- **Version inicial: `v0.1.0`, no `v1.0.0`**: la compuerta de calidad sigue
+  en `status: failed` (`person`/`car` en 0 imágenes, ver Frente 1) —
+  `v0.1.0` refleja honestamente que el dataset todavía no está completo,
+  en vez de anunciar como 1.0 algo que la propia compuerta rechaza.
+- **Un release es inmutable**: `cut_release()` rechaza un `version` que ya
+  existe en el catálogo en vez de sobreescribirlo.
+- **`diff_releases()` no vuelve a correr el gate**: lee los dos
+  `quality.json` ya congelados — un diff no debe poder ver un dataset
+  distinto al que el release realmente describió en su momento.
+
+### Criterios de aceptación
+
+- `dvc status -r dev` y `dvc status -r prod` reportan "in sync" (content
+  hash idéntico, verificado).
+- `reports/versions.json` sigue el contrato `VersionsReport` v1.0 y usa
+  versionado semántico (`v0.1.0` cortado, ver `reports/releases/v0.1.0/`).
+- `presentation.release diff <a> <b>` genera un diff real entre dos
+  releases (conteo por categoría y status de cada check).
+
 ## Frente 1 — Arquitectura y entorno del pipeline de calidad
 
 El portal de anotación (arriba) ya no es el entregable de la Fase 2: es la
