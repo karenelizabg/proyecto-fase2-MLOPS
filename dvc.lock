@@ -1,0 +1,51 @@
+schema: '2.0'
+stages:
+  quality_gate:
+    cmd: uv run python dvc_gate_stage.py
+    deps:
+    - path: ../data/raw/annotations
+      hash: md5
+      md5: 8bd7d8e8f4dcb65edf95d8f38822cc53.dir
+      size: 257094
+      nfiles: 10
+    - path: ../data/raw/images
+      hash: md5
+      md5: 951150dd4fb053f4665089fcb37a1c87.dir
+      size: 13556278
+      nfiles: 600
+    - path: analyzers
+      hash: md5
+      md5: fbb54e6c79513f97cf98333f62270c92.dir
+      size: 52426
+      nfiles: 15
+    - path: dvc_gate_stage.py
+      hash: md5
+      md5: da62f4abd082e7aa26d415f1df71b297
+      size: 2008
+    - path: ingestion
+      hash: md5
+      md5: cf758ce4cd59ce7cc4a14e8554fe2177.dir
+      size: 17098
+      nfiles: 7
+    - path: policies
+      hash: md5
+      md5: 6a8b5d4091d275080864bf8c882701fa.dir
+      size: 13277
+      nfiles: 15
+    - path: presentation/contracts.py
+      hash: md5
+      md5: e1369c0008df2568dbaebb70ccbd2fb0
+      size: 3671
+    - path: presentation/gate.py
+      hash: md5
+      md5: 2c4fdbfca1b2d312ec1cc71445de5bdf
+      size: 7569
+    - path: storage/settings.py
+      hash: md5
+      md5: 1d4364e0462de28b4676a7251dc97b7a
+      size: 3064
+    outs:
+    - path: ../reports/quality.json
+      hash: md5
+      md5: fe2f58e89afe1c436a0bbc9a43ba0452
+      size: 21982
