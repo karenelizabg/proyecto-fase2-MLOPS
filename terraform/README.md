@@ -168,8 +168,8 @@ de este ticket, igual que P2-06 y P2-07.
 
 ## P2-25 — Estado remoto S3 con locking
 
-`bootstrap/remote-state` define exclusivamente un bucket dedicado al estado de
-Terraform, independiente de los buckets DVC/dataset y de los módulos de los
+`bootstrap/remote-state` define un bucket dedicado al estado de Terraform y
+su receptor de access logs, independientes de los buckets DVC/dataset y de los módulos de los
 entornos. Usa el prefijo configurable `bucket_prefix` (`mlops-p2-tfstate-` por
 defecto); el provider agrega un sufijo para generar un nombre único. La región
 se configura con `region` (`us-east-1` por defecto). Los outputs son
@@ -180,6 +180,34 @@ público y denegación HTTPS-only, sin permisos públicos. `force_destroy=false`
 y `prevent_destroy=true` protegen frente a eliminaciones accidentales mediante
 Terraform mientras se conserve la configuración; no sustituyen controles IAM
 ni copias de seguridad. No se crea DynamoDB ni infraestructura de otros tickets.
+
+### Access logging y Sonar S6258
+
+`aws_s3_bucket_logging.state` registra accesos al bucket de state en un receptor
+dedicado `aws_s3_bucket.logs`, creado por este mismo bootstrap en la misma cuenta
+y región. Su nombre usa `bucket_prefix="mlops-p2-tfstate-logs-"` con sufijo generado.
+Tiene SSE-S3 AES256, bloqueo completo de acceso público y política HTTPS-only.
+La única concesión de entrega permite `s3:PutObject` a `logging.s3.amazonaws.com`
+sobre `access-logs/*`, condicionada al ARN del bucket de state y a la cuenta
+obtenida mediante `aws_caller_identity`. No hay identificadores de cuenta ni
+credenciales hardcodeados. La configuración de logging depende explícitamente
+de la policy, cifrado y bloqueo público del receptor.
+
+El receptor **no tiene server access logging**, siguiendo la
+[recomendación de AWS para buckets destino](https://docs.aws.amazon.com/AmazonS3/latest/userguide/enable-server-access-logging.html).
+No envía logs a sí mismo ni al bucket de state y no se crea un tercer bucket.
+Si Sonar S6258 señala específicamente `aws_s3_bucket.logs` en este root, revisar
+ese issue individual: el bucket es deliberadamente un destino de logs protegido,
+no un bucket de datos que haya omitido auditoría accidentalmente. La justificación
+debe identificar este recurso, citar AWS, explicar la ausencia de logging recursivo
+y verificar las protecciones y restricciones de entrega anteriores.
+
+Tras esa revisión, una persona autorizada puede resolver **solo ese issue** como
+`False positive` por el contexto de destino de logs; si la política del equipo
+lo trata como riesgo aceptado, documentar esa decisión con el estado permitido.
+No desactivar la regla, excluir archivos/directorios ni añadir `NOSONAR`. Un
+comentario explicativo no resuelve automáticamente un issue en Sonar. Esta
+configuración no cambia estados de issues; debe comprobarse el próximo análisis.
 
 ### Bootstrap y orden de operación
 
