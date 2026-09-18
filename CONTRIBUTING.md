@@ -79,10 +79,15 @@ mismos comandos que puedes correr en tu máquina:
 
 | Paquete | Comandos (desde su carpeta) |
 |---|---|
-| `app/` (Python) | `uv sync --locked` · `uv run ruff check .` · `uv run ruff format --check .` · `uv run pytest -q` |
-| `backend/` | `npm ci` · `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` |
-| `frontend/` | `npm ci` · `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` |
+| `app/` (Python) | `uv sync --locked --no-build` · `uv run --locked --no-build ruff check .` · `uv run --locked --no-build ruff format --check .` · `uv run --locked --no-build pytest -q` |
+| `backend/` | `npm ci --ignore-scripts` · `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` |
+| `frontend/` | `npm ci --ignore-scripts` · `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` |
 | `docker-compose.yml` | `docker compose config --quiet` (con `MINIO_ROOT_USER` y `MINIO_ROOT_PASSWORD` definidas) |
+
+`--no-build` (uv) y `--ignore-scripts` (npm) evitan ejecutar scripts de instalación o de
+compilación de dependencias de terceros: lo pide SonarCloud y `app/Dockerfile` ya lo hacía. Si
+una dependencia nueva solo se publica como código fuente, o necesita un script de instalación,
+el CI fallará a propósito para que el equipo lo revise y decida.
 
 Para arreglar de golpe lo que Ruff o Biome pueden corregir solos: `uv run ruff check --fix .`
 y `uv run ruff format .` en `app/`; `npm run lint:fix` en `backend/` y `frontend/`.

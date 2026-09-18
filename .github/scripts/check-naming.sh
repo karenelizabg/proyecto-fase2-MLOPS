@@ -24,18 +24,18 @@ status=0
 if ! [[ "$BRANCH" =~ $BRANCH_RE ]]; then
   echo "::error title=Nombre de rama::'$BRANCH' no sigue la convención. Usa p2-NN-descripcion" \
     "(varios tickets: p2-22-23-24-descripcion) o tipo/descripcion con tipo en ($TYPES)," \
-    "todo en minúsculas y con guiones. Ver CONTRIBUTING.md."
+    "todo en minúsculas y con guiones. Ver CONTRIBUTING.md." >&2
   status=1
 fi
 
 if ! [[ "$TITLE" =~ $TITLE_RE ]]; then
   echo "::error title=Título del PR::'$TITLE' no sigue la convención. Usa 'P2-NN: descripción'" \
     "(varios tickets: 'P2-NN P2-MM: ...' o 'P2-22/23/24: ...') o 'tipo: descripción' con" \
-    "tipo en ($TYPES). Ver CONTRIBUTING.md."
+    "tipo en ($TYPES). Ver CONTRIBUTING.md." >&2
   status=1
 fi
 
-if [ "$status" -eq 0 ]; then
+if [[ "$status" -eq 0 ]]; then
   echo "La rama y el título cumplen la convención."
 fi
 exit "$status"
