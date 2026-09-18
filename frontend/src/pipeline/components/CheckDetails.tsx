@@ -13,7 +13,14 @@ const smallBoxSchema = z.object({
   combination: z.literal("and"),
 });
 const pairsSchema = z.array(
-  z.object({ image_id_a: z.number(), image_id_b: z.number(), similarity: z.number() })
+  z.object({
+    image_id_a: z.number(),
+    image_id_b: z.number(),
+    similarity: z.number(),
+    split_a: z.string().optional(),
+    split_b: z.string().optional(),
+    hamming_distance: z.number().optional(),
+  })
 );
 
 export function CheckCriterion({ check }: Readonly<{ check: QualityCheck }>) {
@@ -65,6 +72,15 @@ export function CheckDetails({ check }: Readonly<{ check: QualityCheck }>) {
             {pairs.data.map((pair) => (
               <li key={`${pair.image_id_a}-${pair.image_id_b}`}>
                 Imágenes {pair.image_id_a} / {pair.image_id_b}: similitud {pair.similarity}
+                {pair.split_a && pair.split_b && (
+                  <span>
+                    {" "}
+                    · {pair.split_a} → {pair.split_b}
+                  </span>
+                )}
+                {pair.hamming_distance !== undefined && (
+                  <span> · Hamming: {pair.hamming_distance}</span>
+                )}
               </li>
             ))}
           </ul>

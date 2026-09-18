@@ -269,3 +269,15 @@ recortadas) sí centra sistemáticamente al animal; el check falla
 correctamente con `action: warn` (no bloquea, pero queda registrado).
 
 Desde `app/`: `python -m pytest tests/test_spatial_bias.py`.
+
+## P2-53 — cross_split_leakage
+
+`analyze_cross_split_leakage(assignments, duplicate_pairs, config, image_ids=...)`
+es puro: recibe assignments y pares del detector existente, sin recalcular hashes
+ni generar splits. Cuenta pares únicos entre splits distintos; el universo COCO
+permite rechazar omisiones/IDs extra incluso cuando no aparecen en ningún par.
+`LeakageConfig` recibe el límite de pares y el threshold de detección de la misma
+QualityPolicy. `passed` usa `metric_value <= threshold`. Se conserva pHash de
+64 bits y se rechazan metadatos contradictorios de pares. Los resultados son
+canónicos por ID y contienen splits/IDs/distancia/similitud de los pares cruzados.
+El sesgo espacial P2-29 conserva su algoritmo; P2-53 amplía sus pruebas de integración.

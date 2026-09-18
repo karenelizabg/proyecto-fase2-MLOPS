@@ -44,6 +44,7 @@ def test_cut_release_writes_quality_splits_and_catalog(tmp_path):
     reports_dir = tmp_path / "reports"
     policy = load_quality_policy(_policy_path(tmp_path))
 
+    policy.min_images_per_class.threshold = 999
     release = cut_release("v0.1.0", dataset_dir=dataset_dir, reports_dir=reports_dir, policy=policy)
 
     assert release.dataset_version == "v0.1.0"
@@ -63,6 +64,8 @@ def test_cut_release_writes_quality_splits_and_catalog(tmp_path):
 
     quality = json.loads(quality_path.read_text(encoding="utf-8"))
     assert quality["dataset_version"] == "v0.1.0"
+    assert quality["status"] == "failed"  # Releases retain the existing policy.
+    assert len(quality["checks"]) == 7
     splits = json.loads(splits_path.read_text(encoding="utf-8"))
     assert splits["total_images"] == 12
     assert (
@@ -127,38 +130,47 @@ def test_release_injects_same_policy_and_custom_splits(monkeypatch, tmp_path):
     policy = load_quality_policy(_policy_path(tmp_path))
     policy.duplicate_similarity_threshold.threshold = 1.0
     config = SplitsConfig(train=0.5, val=0.25, test=0.25, seed=73)
-    original_analyze = module.analyze_duplicates
-    original_split = module.split_dataset
-    original_build = module.build_quality_report
-    seen = {}
+    from presentation import gate
+
+    original_analyze = gate.analyze_duplicates
+    original_split = gate.split_dataset
+    original_report = module.build_splits_report
+    original_leakage = gate.analyze_cross_split_leakage
+    seen = {"analyze": 0, "split": 0}
 
     def analyze(contents, duplicate_config):
-        seen["threshold"] = duplicate_config.threshold
+        seen["analyze"] += 1
+        assert duplicate_config.threshold == 1.0
         result = original_analyze(contents, duplicate_config)
         seen["pairs"] = result.details["image_pairs"]
         return result
 
     def split(coco, passed_config, **kwargs):
+        seen["split"] += 1
         assert passed_config is config
-        assert kwargs["duplicate_pairs"] == seen["pairs"]
+        assert kwargs["duplicate_pairs"] is seen["pairs"]
         result = original_split(coco, passed_config, **kwargs)
-        seen["targets"] = dict(result.target_sizes)
+        seen["result"] = result
         return result
 
-    def build(**kwargs):
-        assert kwargs["policy"] is policy
-        result = original_build(**kwargs)
-        check = next(c for c in result.checks if c.check_name == "duplicate_similarity_threshold")
-        assert check.details["similarity_threshold"] == 1.0
-        return result
+    def leakage(assignments, pairs, config, **kwargs):
+        assert assignments is seen["result"].assignments
+        assert pairs is seen["pairs"]
+        return original_leakage(assignments, pairs, config, **kwargs)
+
+    def report(result, **kwargs):
+        assert result is seen["result"]
+        return original_report(result, **kwargs)
 
     def no_reload():
         pytest.fail("Injected splits must not reload YAML")
 
+    monkeypatch.setattr(gate, "load_splits_config", no_reload)
     monkeypatch.setattr(module, "load_splits_config", no_reload)
-    monkeypatch.setattr(module, "analyze_duplicates", analyze)
-    monkeypatch.setattr(module, "split_dataset", split)
-    monkeypatch.setattr(module, "build_quality_report", build)
+    monkeypatch.setattr(gate, "analyze_duplicates", analyze)
+    monkeypatch.setattr(gate, "split_dataset", split)
+    monkeypatch.setattr(gate, "analyze_cross_split_leakage", leakage)
+    monkeypatch.setattr(module, "build_splits_report", report)
     module.cut_release(
         "v0.2.0",
         dataset_dir=dataset_dir,
@@ -166,8 +178,8 @@ def test_release_injects_same_policy_and_custom_splits(monkeypatch, tmp_path):
         policy=policy,
         splits_config=config,
     )
-    assert seen["threshold"] == 1.0
-    assert sorted(seen["targets"].values()) == [3, 3, 6]
+    assert seen["analyze"] == seen["split"] == 1
+    assert sorted(seen["result"].target_sizes.values()) == [3, 3, 6]
 
 
 def test_release_custom_similarity_changes_duplicate_components(tmp_path):

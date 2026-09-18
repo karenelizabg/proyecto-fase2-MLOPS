@@ -20,6 +20,15 @@ stages:
       - presentation/contracts.py
       - presentation/gate.py
       - storage/settings.py
+      - splits/__init__.py
+      - splits/models.py
+      - splits/stratified.py
+    params:
+      - splits/splits.yaml:
+          - train
+          - val
+          - test
+          - seed
     metrics:
       - ../reports/quality.json:
           cache: false

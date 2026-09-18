@@ -25,14 +25,11 @@ import logging
 import re
 from pathlib import Path
 
-from analyzers.duplicates import DuplicateConfig, analyze_duplicates
-from ingestion.loader import load_dataset, load_image_bytes
 from policies.models import QualityPolicy
 from presentation.contracts import DatasetRelease, VersionsReport
-from presentation.gate import build_quality_report
+from presentation.gate import evaluate_dataset
 from presentation.splits import build_splits_report
 from splits.models import SplitsConfig, load_splits_config
-from splits.stratified import split_dataset
 
 logger = logging.getLogger("dataset-release")
 
@@ -68,22 +65,11 @@ def cut_release(
 
     # One configuration snapshot per operation; custom callers can inject it.
     splits_config = splits_config if splits_config is not None else load_splits_config()
-    coco = load_dataset(dataset_dir / "annotations")
-    images_dir = dataset_dir / "images"
-    image_contents = load_image_bytes(coco, images_dir)
-
-    quality_report = build_quality_report(
-        dataset_dir=dataset_dir, policy=policy, dataset_version=version
-    )
-
-    duplicates = analyze_duplicates(
-        image_contents, DuplicateConfig(threshold=policy.duplicate_similarity_threshold.threshold)
-    )
-    split_result = split_dataset(
-        coco,
-        splits_config,
-        image_contents=image_contents,
-        duplicate_pairs=duplicates.details["image_pairs"],
+    quality_report, split_result = evaluate_dataset(
+        dataset_dir=dataset_dir,
+        policy=policy,
+        dataset_version=version,
+        splits_config=splits_config,
     )
     splits_report = build_splits_report(split_result, dataset_version=version)
 
