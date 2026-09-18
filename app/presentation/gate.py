@@ -22,17 +22,12 @@ from analyzers.imbalance import ImbalanceConfig, analyze_imbalance
 from analyzers.invalid_boxes import InvalidBoxConfig, analyze_invalid_boxes
 from analyzers.small_objects import SmallObjectConfig, analyze_small_objects
 from analyzers.spatial_bias import SpatialBiasConfig, analyze_spatial_bias
-from ingestion.loader import load_dataset
-from ingestion.models import CocoDataset
+from ingestion.loader import load_dataset, load_image_bytes
 from policies.models import QualityPolicy
 from presentation.contracts import QualityCheck, QualityReport
 from storage.settings import Settings
 
 logger = logging.getLogger("quality-gate")
-
-
-def _load_image_bytes(coco: CocoDataset, images_dir: Path) -> dict[int, bytes]:
-    return {image.id: (images_dir / image.file_name).read_bytes() for image in coco.images}
 
 
 def _min_images_per_class_check(imbalance_result, policy: QualityPolicy) -> QualityCheck:
@@ -76,7 +71,7 @@ def build_quality_report(
     imbalance_result = analyze_imbalance(coco_dict, imbalance_config)
     small_objects_result = analyze_small_objects(coco_dict, small_config)
     invalid_boxes_result = analyze_invalid_boxes(coco_dict, invalid_config)
-    duplicates_result = analyze_duplicates(_load_image_bytes(coco, images_dir), duplicate_config)
+    duplicates_result = analyze_duplicates(load_image_bytes(coco, images_dir), duplicate_config)
     spatial_bias_result = analyze_spatial_bias(coco_dict, spatial_config)
 
     checks = [

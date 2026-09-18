@@ -1,0 +1,191 @@
+"""Tier 6 — corte y diff de releases versionados (P2-45).
+
+Un release congela un `dataset_version` semver (`vMAJOR.MINOR.PATCH`) junto
+con su `quality.json` y `splits.json` bajo
+`REPORTS_DIR/releases/<version>/`, y agrega la entrada al catálogo
+`REPORTS_DIR/versions.json` (`VersionsReport`, contrato v1.0 de P2-12).
+
+`cut_release`/`diff_releases` reciben `dataset_dir`/`reports_dir`/`policy`
+directos, no un `Settings` completo — mismo patrón que
+`gate.build_quality_report`, para poder probarlos sin declarar
+`DATABASE_URL`/`MINIO_*` (campos requeridos por `Settings` mas nunca
+usados aquí). `main()` es el único punto que construye `Settings()`.
+
+No recalcula el "content hash" del dataset entre DEV/PROD: ese hash ya es
+el md5 en `data/raw/annotations.dvc`/`data/raw/images.dvc` que DVC calcula
+al hacer `dvc add` — es el mismo valor sin importar el remote, por
+construcción. Verificar que ambos remotes lo tengan de verdad es
+`dvc status -r dev`/`dvc status -r prod` reportando "in sync" (ver
+README.md, sección P2-45) — no hace falta reimplementarlo aquí.
+"""
+
+import argparse
+import json
+import logging
+import re
+from pathlib import Path
+
+from analyzers.duplicates import analyze_duplicates
+from ingestion.loader import load_dataset, load_image_bytes
+from policies.duplicates import load_duplicate_config
+from policies.models import QualityPolicy
+from presentation.contracts import DatasetRelease, VersionsReport
+from presentation.gate import build_quality_report
+from presentation.splits import build_splits_report
+from splits.models import load_splits_config
+from splits.stratified import split_dataset
+
+logger = logging.getLogger("dataset-release")
+
+SEMVER_PATTERN = re.compile(r"^v\d+\.\d+\.\d+$")
+
+
+def _load_catalog(catalog_path: Path) -> VersionsReport:
+    if not catalog_path.exists():
+        return VersionsReport(schema_version="1.0", releases=[])
+    return VersionsReport.model_validate_json(catalog_path.read_text(encoding="utf-8"))
+
+
+def cut_release(
+    version: str, *, dataset_dir: Path, reports_dir: Path, policy: QualityPolicy
+) -> DatasetRelease:
+    """Corre el gate y los splits reales contra el dataset actual y los congela.
+
+    Rechaza un `version` ya existente en el catálogo: un release es
+    inmutable una vez cortado, no se sobreescribe.
+    """
+    if not SEMVER_PATTERN.fullmatch(version):
+        raise ValueError(f"version debe seguir vMAJOR.MINOR.PATCH, recibido: {version!r}")
+
+    catalog_path = reports_dir / "versions.json"
+    catalog = _load_catalog(catalog_path)
+    if any(release.dataset_version == version for release in catalog.releases):
+        raise ValueError(f"el release {version!r} ya existe en el catálogo")
+
+    coco = load_dataset(dataset_dir / "annotations")
+    images_dir = dataset_dir / "images"
+    image_contents = load_image_bytes(coco, images_dir)
+
+    quality_report = build_quality_report(
+        dataset_dir=dataset_dir, policy=policy, dataset_version=version
+    )
+
+    duplicates = analyze_duplicates(image_contents, load_duplicate_config())
+    split_result = split_dataset(
+        coco,
+        load_splits_config(),
+        image_contents=image_contents,
+        duplicate_pairs=duplicates.details["image_pairs"],
+    )
+    splits_report = build_splits_report(split_result, dataset_version=version)
+
+    release_dir = reports_dir / "releases" / version
+    release_dir.mkdir(parents=True, exist_ok=True)
+    (release_dir / "quality.json").write_text(
+        quality_report.model_dump_json(indent=2), encoding="utf-8"
+    )
+    (release_dir / "splits.json").write_text(
+        splits_report.model_dump_json(indent=2), encoding="utf-8"
+    )
+
+    release = DatasetRelease(
+        dataset_version=version,
+        quality_file=f"releases/{version}/quality.json",
+        splits_file=f"releases/{version}/splits.json",
+    )
+    catalog = VersionsReport(schema_version="1.0", releases=[*catalog.releases, release])
+    catalog_path.parent.mkdir(parents=True, exist_ok=True)
+    catalog_path.write_text(catalog.model_dump_json(indent=2), encoding="utf-8")
+
+    logger.info("Release %s cortado en %s", version, release_dir)
+    return release
+
+
+def _category_counts(quality_report_dict: dict) -> dict[str, int]:
+    check = next(
+        c for c in quality_report_dict["checks"] if c["check_name"] == "max_imbalance_ratio"
+    )
+    return {
+        category["category_name"]: category["image_count"]
+        for category in check["details"]["images_per_category"]
+    }
+
+
+def diff_releases(version_a: str, version_b: str, *, reports_dir: Path) -> dict:
+    """Compara dos releases ya cortados: conteo por categoría y status de cada check.
+
+    Ambos deben existir en el catálogo; no corre el gate de nuevo, lee los
+    JSON ya congelados — un diff no debe poder ver un dataset distinto al
+    que el release realmente describió.
+    """
+    catalog = _load_catalog(reports_dir / "versions.json")
+    by_version = {release.dataset_version: release for release in catalog.releases}
+    for version in (version_a, version_b):
+        if version not in by_version:
+            raise ValueError(f"el release {version!r} no existe en el catálogo")
+
+    def _load_quality(version: str) -> dict:
+        path = reports_dir / by_version[version].quality_file
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    quality_a, quality_b = _load_quality(version_a), _load_quality(version_b)
+    counts_a, counts_b = _category_counts(quality_a), _category_counts(quality_b)
+    categories = sorted(set(counts_a) | set(counts_b))
+
+    checks_a = {c["check_name"]: c for c in quality_a["checks"]}
+    checks_b = {c["check_name"]: c for c in quality_b["checks"]}
+    check_names = sorted(set(checks_a) | set(checks_b))
+
+    return {
+        "from": version_a,
+        "to": version_b,
+        "status": {"from": quality_a["status"], "to": quality_b["status"]},
+        "images_per_category": {
+            name: {"from": counts_a.get(name, 0), "to": counts_b.get(name, 0)}
+            for name in categories
+        },
+        "checks": {
+            name: {
+                "from": checks_a[name]["passed"] if name in checks_a else None,
+                "to": checks_b[name]["passed"] if name in checks_b else None,
+            }
+            for name in check_names
+        },
+    }
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Sin exit code propio: un fallo real se señala con una excepción (no
+    con un entero), así que no hay dos ramas de éxito devolviendo el mismo
+    valor por separado."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    parser = argparse.ArgumentParser(prog="presentation.release")
+    subparsers = parser.add_subparsers(dest="action", required=True)
+
+    cut_parser = subparsers.add_parser("cut", help="Corta un release nuevo del dataset actual.")
+    cut_parser.add_argument("version", help="vMAJOR.MINOR.PATCH")
+
+    diff_parser = subparsers.add_parser("diff", help="Compara dos releases ya cortados.")
+    diff_parser.add_argument("version_a")
+    diff_parser.add_argument("version_b")
+
+    args = parser.parse_args(argv)
+
+    from storage.settings import Settings
+
+    settings = Settings()
+
+    if args.action == "cut":
+        cut_release(
+            args.version,
+            dataset_dir=settings.dataset_dir,
+            reports_dir=settings.reports_dir,
+            policy=settings.quality,
+        )
+    else:
+        result = diff_releases(args.version_a, args.version_b, reports_dir=settings.reports_dir)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
