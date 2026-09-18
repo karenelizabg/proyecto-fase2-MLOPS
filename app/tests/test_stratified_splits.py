@@ -20,20 +20,21 @@ def dataset(labels):
     for image_id, categories in enumerate(labels):
         for category in categories:
             annotations.append(
-                dict(
-                    id=len(annotations),
-                    image_id=image_id,
-                    category_id=category,
-                    bbox=[0, 0, 10, 10],
-                    area=100,
-                    iscrowd=0,
-                )
+                {
+                    "id": len(annotations),
+                    "image_id": image_id,
+                    "category_id": category,
+                    "bbox": [0, 0, 10, 10],
+                    "area": 100,
+                    "iscrowd": 0,
+                }
             )
     return {
         "images": [
-            dict(id=i, file_name=f"{i}.png", width=64, height=64) for i in range(len(labels))
+            {"id": i, "file_name": f"{i}.png", "width": 64, "height": 64}
+            for i in range(len(labels))
         ],
-        "categories": [dict(id=c, name=f"class-{c}") for c in (1, 2, 3)],
+        "categories": [{"id": c, "name": f"class-{c}"} for c in (1, 2, 3)],
         "annotations": annotations,
     }
 
@@ -284,7 +285,7 @@ def test_too_few_images_fail(count):
 def test_too_few_groups_fail_even_with_many_images():
     coco = dataset([[1]] * 8)
     cfg = config()
-    contents = {i: b"same content" for i in range(8)}
+    contents = dict.fromkeys(range(8), b"same content")
     with pytest.raises(ValueError, match="three independent"):
         run(coco, cfg, contents=contents)
 

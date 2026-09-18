@@ -40,9 +40,8 @@ def test_main_logs_status_and_keeps_running(monkeypatch, caplog, status):
     _patch_common(monkeypatch)
     monkeypatch.setattr(main_module.gate, "run", lambda: _fake_report(status))
 
-    with caplog.at_level(logging.INFO):
-        with pytest.raises(_StopLoop):
-            main_module.main()
+    with caplog.at_level(logging.INFO), pytest.raises(_StopLoop):
+        main_module.main()
 
     if status == "failed":
         assert any(

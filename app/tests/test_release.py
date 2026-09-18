@@ -80,7 +80,7 @@ def test_cut_release_rejects_bad_version_format(tmp_path):
     dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=6, dogs=6)
     policy = load_quality_policy(_policy_path(tmp_path))
 
-    with pytest.raises(ValueError, match="vMAJOR.MINOR.PATCH"):
+    with pytest.raises(ValueError, match=r"vMAJOR\.MINOR\.PATCH"):
         cut_release("1.0", dataset_dir=dataset_dir, reports_dir=tmp_path / "reports", policy=policy)
 
 

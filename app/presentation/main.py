@@ -23,7 +23,7 @@ def _wait_for_dependencies(retries: int = 10, delay_seconds: float = 3.0) -> Non
             minio_client.bucket_exists(bucket)
             logger.info("Conectado a MariaDB y a MinIO (bucket=%s).", bucket)
             return
-        except Exception as error:  # noqa: BLE001 - reintento deliberado en el arranque
+        except Exception as error:  # reintento deliberado en el arranque
             logger.warning(
                 "Intento %s/%s: dependencias aún no listas (%s).", attempt, retries, error
             )
