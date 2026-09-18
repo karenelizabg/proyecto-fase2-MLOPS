@@ -46,6 +46,44 @@ def test_dedupes_repeated_categories_by_id(tmp_path):
     assert len(dataset.categories) == 3
 
 
+def test_category_id_collision_with_different_name_is_rejected(tmp_path):
+    # id=4 significa "cat" en un lote y "wolf" en el otro: una colisión real,
+    # no la repetición esperada del seeder (mismo id, mismo nombre).
+    doc_a = {
+        "images": [{"id": 1, "file_name": "cat.0.jpg", "width": 10, "height": 10}],
+        "annotations": [
+            {
+                "id": 1,
+                "image_id": 1,
+                "category_id": 4,
+                "bbox": [0, 0, 5, 5],
+                "area": 25.0,
+                "iscrowd": 0,
+            }
+        ],
+        "categories": [{"id": 4, "name": "cat"}],
+    }
+    doc_b = {
+        "images": [{"id": 2, "file_name": "wolf.0.jpg", "width": 10, "height": 10}],
+        "annotations": [
+            {
+                "id": 2,
+                "image_id": 2,
+                "category_id": 4,
+                "bbox": [0, 0, 5, 5],
+                "area": 25.0,
+                "iscrowd": 0,
+            }
+        ],
+        "categories": [{"id": 4, "name": "wolf"}],
+    }
+    (tmp_path / "lote-a.json").write_text(json.dumps(doc_a), encoding="utf-8")
+    (tmp_path / "lote-b.json").write_text(json.dumps(doc_b), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="category id=4"):
+        load_dataset(tmp_path)
+
+
 def test_cross_file_id_collision_is_rejected_not_silently_merged(tmp_path):
     # Mismo image_id/annotation_id en dos lotes distintos: el bug real de
     # project_dataset_id_collision_bug, reproducido a propósito.

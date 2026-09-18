@@ -18,7 +18,10 @@ def load_dataset(annotations_dir: Path) -> CocoDataset:
 
     Las categorías se deduplican por id (el seeder del portal siempre asigna
     los mismos ids fijos: person=1, car=2, dog=3, cat=4), quedándose con la
-    primera aparición.
+    primera aparición. Si dos lotes usan el mismo id de categoría para
+    nombres distintos, es una colisión real (no una simple repetición del
+    seeder) y se rechaza aquí en vez de mezclar silenciosamente anotaciones
+    de una clase con el nombre de otra.
     """
     files = sorted(annotations_dir.glob("*.json"))
     if not files:
@@ -27,12 +30,21 @@ def load_dataset(annotations_dir: Path) -> CocoDataset:
     images = []
     annotations = []
     categories_by_id: dict[int, dict] = {}
+    categories_source: dict[int, Path] = {}
     for path in files:
         raw = json.loads(path.read_text(encoding="utf-8"))
         images.extend(raw["images"])
         annotations.extend(raw["annotations"])
         for category in raw["categories"]:
+            existing = categories_by_id.get(category["id"])
+            if existing is not None and existing["name"] != category["name"]:
+                raise ValueError(
+                    f"category id={category['id']} tiene nombres distintos: "
+                    f"'{existing['name']}' en {categories_source[category['id']]} vs "
+                    f"'{category['name']}' en {path}"
+                )
             categories_by_id.setdefault(category["id"], category)
+            categories_source.setdefault(category["id"], path)
 
     return CocoDataset.model_validate(
         {
