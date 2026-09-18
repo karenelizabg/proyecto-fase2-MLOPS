@@ -10,8 +10,8 @@ Código de infraestructura AWS, sin despliegue. Los roots `environments/dev` y
 | `data` | Una RDS MariaDB `db.t3.micro`, 20 GiB cifrados, backups retenidos 7 días y acceso solo desde compute. RDS administra la contraseña en Secrets Manager. |
 | `storage` | Un bucket de artefactos y otro para sus access logs, con nombres generados, cifrado SSE-S3, bloqueo de acceso público y políticas HTTPS-only. |
 
-Cada entorno tiene su propia configuración, etiquetas, nombres y estado local
-por directorio. Dev usa `10.10.0.0/16`; prod, `10.20.0.0/16`. Ambos usan por defecto
+Cada entorno tiene su propia configuración, etiquetas, nombres y key de estado
+S3 (P2-25, explicado abajo). Dev usa `10.10.0.0/16`; prod, `10.20.0.0/16`. Ambos usan por defecto
 `us-east-1` y dos zonas distintas. No se agregan tamaños ni servicios adicionales
 solo por llamarse prod: esta es una base mínima, no una arquitectura de producción.
 
@@ -32,7 +32,7 @@ No se agregan supresiones de análisis ni se modifican los buckets de P2-04.
 
 ## Validación
 
-Requisitos: Terraform CLI >= 1.5 y < 2.0, y acceso al registro para descargar
+Requisitos: Terraform CLI >= 1.10 y < 2.0, y acceso al registro para descargar
 el provider `hashicorp/aws` 6.x. No se necesitan credenciales AWS, sesión SSO
 ni una AMI real para estos comandos; no consultan ni despliegan recursos AWS.
 Si falta el ejecutable, instala Terraform siguiendo la
@@ -95,7 +95,7 @@ Environments. El job OIDC no declara `environment` para conservar ese subject.
 
 ### Validación estática y prueba real
 
-El workflow `.github/workflows/terraform-oidc.yml` valida los tres roots en PRs
+El workflow `.github/workflows/terraform-oidc.yml` valida los roots en PRs
 hacia `main`, pushes a `main` y ejecuciones manuales. El job de validación solo
 tiene `contents: read`; no intenta asumir un rol ni necesita credenciales AWS.
 Las Actions están fijadas a commits verificados de sus repositorios oficiales.
@@ -165,3 +165,147 @@ públicas). El nombre del servicio se resuelve con `data "aws_region"
 
 No se ejecuta `apply` ni se modifica ningún recurso real de AWS como parte
 de este ticket, igual que P2-06 y P2-07.
+
+## P2-25 — Estado remoto S3 con locking
+
+`bootstrap/remote-state` define un bucket dedicado al estado de Terraform y
+su receptor de access logs, independientes de los buckets DVC/dataset y de los módulos de los
+entornos. Usa el prefijo configurable `bucket_prefix` (`mlops-p2-tfstate-` por
+defecto); el provider agrega un sufijo para generar un nombre único. La región
+se configura con `region` (`us-east-1` por defecto). Los outputs son
+`state_bucket_name` y `state_bucket_region`.
+
+El bucket tiene versionado, cifrado SSE-S3 AES256, bloqueo completo de acceso
+público y denegación HTTPS-only, sin permisos públicos. `force_destroy=false`
+y `prevent_destroy=true` protegen frente a eliminaciones accidentales mediante
+Terraform mientras se conserve la configuración; no sustituyen controles IAM
+ni copias de seguridad. No se crea DynamoDB ni infraestructura de otros tickets.
+
+### Access logging y Sonar S6258
+
+`aws_s3_bucket_logging.state` registra accesos al bucket de state en un receptor
+dedicado `aws_s3_bucket.logs`, creado por este mismo bootstrap en la misma cuenta
+y región. Su nombre usa `bucket_prefix="mlops-p2-tfstate-logs-"` con sufijo generado.
+Tiene SSE-S3 AES256, bloqueo completo de acceso público y política HTTPS-only.
+La única concesión de entrega permite `s3:PutObject` a `logging.s3.amazonaws.com`
+sobre `access-logs/*`, condicionada al ARN del bucket de state y a la cuenta
+obtenida mediante `aws_caller_identity`. No hay identificadores de cuenta ni
+credenciales hardcodeados. La configuración de logging depende explícitamente
+de la policy, cifrado y bloqueo público del receptor.
+
+El receptor **no tiene server access logging**, siguiendo la
+[recomendación de AWS para buckets destino](https://docs.aws.amazon.com/AmazonS3/latest/userguide/enable-server-access-logging.html).
+No envía logs a sí mismo ni al bucket de state y no se crea un tercer bucket.
+Si Sonar S6258 señala específicamente `aws_s3_bucket.logs` en este root, revisar
+ese issue individual: el bucket es deliberadamente un destino de logs protegido,
+no un bucket de datos que haya omitido auditoría accidentalmente. La justificación
+debe identificar este recurso, citar AWS, explicar la ausencia de logging recursivo
+y verificar las protecciones y restricciones de entrega anteriores.
+
+Tras esa revisión, una persona autorizada puede resolver **solo ese issue** como
+`False positive` por el contexto de destino de logs; si la política del equipo
+lo trata como riesgo aceptado, documentar esa decisión con el estado permitido.
+No desactivar la regla, excluir archivos/directorios ni añadir `NOSONAR`. Un
+comentario explicativo no resuelve automáticamente un issue en Sonar. Esta
+configuración no cambia estados de issues; debe comprobarse el próximo análisis.
+
+### Bootstrap y orden de operación
+
+Primero una persona autorizada debe provisionar el bucket desde el root
+`bootstrap/remote-state`, en una operación futura separada. **Esta entrega no
+crea recursos AWS ni ejecuta apply, plan o migraciones.** El bootstrap usa el
+backend local implícito: no puede depender del bucket que todavía va a crear.
+Su state inicial permanece local, ignorado por Git, y debe custodiarse y
+respaldarse de forma segura. No borrarlo ni recrear el bootstrap desde un clon
+sin recuperar su estado; ignorarlo no equivale a respaldarlo.
+
+Solo cuando el bucket exista y esté configurado se inicializan dev y prod con
+él. No se obtiene el bucket desde `module.storage` ni desde variables/outputs
+del propio root: Terraform inicializa el backend antes de evaluar esos recursos.
+`bootstrap/github-oidc` conserva su backend local y su comportamiento de P2-07.
+
+### Configuración parcial e inicialización futura
+
+Los `backend.tf` fijan `encrypt=true`, `use_lockfile=true` y keys diferentes:
+
+| Root | Key en el bucket compartido |
+|---|---|
+| `environments/dev` | `environments/dev/terraform.tfstate` |
+| `environments/prod` | `environments/prod/terraform.tfstate` |
+
+Bucket y región se suministran con `-backend-config`. No son variables Terraform
+del entorno; la región del backend debe ser la del bucket, aunque la región de
+los recursos de un entorno sea distinta. Después del aprovisionamiento autorizado,
+desde la raíz del repositorio, para un root sin estado local previo:
+
+```bash
+state_bucket_name="$(terraform -chdir=terraform/bootstrap/remote-state output -raw state_bucket_name)"
+state_bucket_region="$(terraform -chdir=terraform/bootstrap/remote-state output -raw state_bucket_region)"
+
+terraform -chdir=terraform/environments/dev init \
+  -backend-config="bucket=$state_bucket_name" \
+  -backend-config="region=$state_bucket_region"
+
+terraform -chdir=terraform/environments/prod init \
+  -backend-config="bucket=$state_bucket_name" \
+  -backend-config="region=$state_bucket_region"
+```
+
+Estas inicializaciones **sí contactan S3** y no forman parte de la validación
+estática. En otro equipo sin el state del bootstrap, una persona autorizada
+proporciona su nombre y región de salida y se asignan directamente esas dos
+variables de shell. No ejecutar de nuevo el bootstrap para descubrir el nombre.
+
+La identidad se resuelve externamente mediante la cadena de credenciales AWS
+(por ejemplo sesión SSO autorizada). No poner claves, tokens ni perfiles
+personales en `.tf` ni en argumentos de configuración del backend. Terraform
+guarda metadatos de backend bajo `.terraform/`, que permanece ignorado.
+
+### Locking y permisos
+
+`use_lockfile=true` requiere Terraform >= 1.10. El backend utiliza un objeto
+`<key>.tflock` para coordinar operaciones que bloquean el estado de esa key.
+Dev y prod tienen locks independientes. No usar `-lock=false`; ante un lock
+abandonado, verificar primero que no haya otra operación activa antes de
+considerar un desbloqueo administrativo.
+
+El operador necesita `s3:ListBucket` limitado a los prefijos correspondientes,
+`s3:GetObject`/`s3:PutObject` sobre el state y
+`s3:GetObject`/`s3:PutObject`/`s3:DeleteObject` sobre su `.tflock`. No necesita
+eliminar el objeto state. El rol OIDC actual solo prueba identidad y no recibe
+permisos S3 en este ticket; autenticarlo no demuestra acceso al backend.
+
+`.terraform.lock.hcl` fija providers y checksums: se mantiene versionado y no
+es el archivo de locking del state. El nuevo root conserva la selección AWS
+6.64.0 y los checksums existentes, sin actualizar el provider.
+
+### Estado local existente
+
+Antes de una migración, detener operaciones concurrentes, respaldar el state
+fuera de Git, verificar bucket/key/identidad y comprobar si el destino ya tiene
+estado. No sobrescribir un destino ocupado. Solo tras revisar y autorizar la
+migración, usar `terraform init -migrate-state` en el root correspondiente con
+los mismos argumentos `-backend-config` y revisar su confirmación. No automatizar
+`-force-copy`; `-reconfigure` no sustituye la migración de un state existente.
+Conservar el respaldo hasta verificar el destino. No se migra nada en esta entrega.
+
+Nunca subir `.tfstate`, backups, `.terraform/` ni planes a Git. Las exclusiones
+globales complementan `terraform/.gitignore`, conservando los lockfiles de providers.
+
+### Validación sin AWS
+
+```bash
+terraform fmt -check -recursive terraform
+for root in environments/dev environments/prod bootstrap/github-oidc bootstrap/remote-state; do
+  terraform -chdir="terraform/$root" init -backend=false -input=false -lockfile=readonly
+  terraform -chdir="terraform/$root" validate
+done
+git diff --check
+git ls-files | grep -E '\.tfstate|\.terraform/'
+```
+
+El último comando no debe imprimir nada (`grep` devuelve 1 si no hay coincidencias).
+El workflow incluye los cuatro roots, sin activar los backends. Estas pruebas
+pueden descargar providers, pero no demuestran existencia del bucket, permisos,
+migración ni locking concurrente real. Esas comprobaciones quedan para una
+operación AWS autorizada posterior.

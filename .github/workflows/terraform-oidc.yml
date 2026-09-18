@@ -28,7 +28,7 @@ jobs:
       - name: Initialize and validate all roots
         shell: bash
         run: |
-          for root in environments/dev environments/prod bootstrap/github-oidc; do
+          for root in environments/dev environments/prod bootstrap/github-oidc bootstrap/remote-state; do
             terraform -chdir="terraform/$root" init -backend=false -input=false -lockfile=readonly
             terraform -chdir="terraform/$root" validate
           done
