@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { ZodType } from "zod";
+import { projectionsReportSchema } from "./projectionSchemas";
 import type { QualityReport, SplitsReport } from "./schemas";
 import {
   type DatasetRelease,
@@ -48,4 +49,8 @@ export function useReleaseReport(kind: "quality" | "splits", release: DatasetRel
     [kind, release.dataset_version]
   );
   return useReportFetch(parsed.success ? `/reports/${parsed.data}` : null, schema);
+}
+
+export function useProjectionsReport() {
+  return useReportFetch("/reports/projections.json", projectionsReportSchema);
 }

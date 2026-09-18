@@ -1,5 +1,6 @@
 import {
   Bot,
+  ChartScatter,
   Gauge,
   History,
   LayoutDashboard,
@@ -29,6 +30,7 @@ const PIPELINE_NAV_ITEMS: NavItem[] = [
   { label: "Analyzers", to: "/pipeline/analyzers", icon: ScanSearch },
   { label: "Splits", to: "/pipeline/splits", icon: SplitSquareHorizontal },
   { label: "Versions", to: "/pipeline/versions", icon: History },
+  { label: "PCA / t-SNE", to: "/pipeline/projections", icon: ChartScatter },
   { label: "Copilot", to: "/pipeline/copilot", icon: Bot },
   { label: "Settings", to: "/pipeline/settings", icon: SettingsIcon },
 ];

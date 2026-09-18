@@ -23,3 +23,35 @@ stages:
     metrics:
       - ../reports/quality.json:
           cache: false
+  projections:
+    wdir: app
+    cmd: uv run python dvc_projections_stage.py
+    deps:
+      - ../data/raw/annotations
+      - ../data/raw/images
+      - dvc_projections_stage.py
+      - projections/__init__.py
+      - projections/compute.py
+      - projections/models.py
+      - ingestion/__init__.py
+      - ingestion/loader.py
+      - ingestion/models.py
+      - presentation/__init__.py
+      - presentation/contracts.py
+      - presentation/projections.py
+      - presentation/projections_contracts.py
+      - analyzers/base.py
+      - storage/settings.py
+      - policies/models.py
+      - policies/quality.yaml
+      - pyproject.toml
+      - uv.lock
+    params:
+      - projections/projections.yaml:
+          - dataset_version
+          - features
+          - pca
+          - tsne
+    outs:
+      - ../reports/projections.json:
+          cache: false
