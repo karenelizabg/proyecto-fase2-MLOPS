@@ -1,11 +1,10 @@
 import json
-from io import BytesIO
 
 import pytest
-from PIL import Image, ImageDraw
 
 from policies.models import load_quality_policy
 from presentation.release import cut_release, diff_releases
+from tests._dataset_fixtures import write_coco_dataset
 
 QUALITY_YAML = """
 min_images_per_class:
@@ -34,73 +33,6 @@ min_spatial_dispersion:
 """
 
 
-def _jpeg_bytes(seed):
-    """Un rectángulo en posición distinta por seed: pHash necesita estructura,
-    no un color plano, para distinguir imágenes (ver test_gate.py)."""
-    image = Image.new("RGB", (64, 64), color=(20, 20, 20))
-    draw = ImageDraw.Draw(image)
-    x0 = (seed * 7) % 40
-    y0 = (seed * 13) % 40
-    draw.rectangle([x0, y0, x0 + 20, y0 + 20], fill=(220, 220, 220))
-    buffer = BytesIO()
-    image.save(buffer, format="JPEG")
-    return buffer.getvalue()
-
-
-def _write_dataset(tmp_path, *, cats=6, dogs=6):
-    annotations_dir = tmp_path / "annotations"
-    images_dir = tmp_path / "images"
-    annotations_dir.mkdir(parents=True)
-    images_dir.mkdir(parents=True)
-
-    images, annotations = [], []
-    image_id = 1
-    ann_id = 1
-    seed = 0
-    for index in range(cats):
-        file_name = f"cat.{index}.jpg"
-        (images_dir / file_name).write_bytes(_jpeg_bytes(seed))
-        seed += 1
-        images.append({"id": image_id, "file_name": file_name, "width": 64, "height": 64})
-        annotations.append(
-            {
-                "id": ann_id,
-                "image_id": image_id,
-                "category_id": 4,
-                "bbox": [0, 0, 40, 40],
-                "area": 1600.0,
-                "iscrowd": 0,
-            }
-        )
-        image_id += 1
-        ann_id += 1
-    for index in range(dogs):
-        file_name = f"dog.{index}.jpg"
-        (images_dir / file_name).write_bytes(_jpeg_bytes(seed))
-        seed += 1
-        images.append({"id": image_id, "file_name": file_name, "width": 64, "height": 64})
-        annotations.append(
-            {
-                "id": ann_id,
-                "image_id": image_id,
-                "category_id": 3,
-                "bbox": [0, 0, 40, 40],
-                "area": 1600.0,
-                "iscrowd": 0,
-            }
-        )
-        image_id += 1
-        ann_id += 1
-
-    doc = {
-        "images": images,
-        "annotations": annotations,
-        "categories": [{"id": 3, "name": "dog"}, {"id": 4, "name": "cat"}],
-    }
-    (annotations_dir / "lote.json").write_text(json.dumps(doc), encoding="utf-8")
-    return tmp_path
-
-
 def _policy_path(tmp_path):
     path = tmp_path / "quality.yaml"
     path.write_text(QUALITY_YAML, encoding="utf-8")
@@ -108,7 +40,7 @@ def _policy_path(tmp_path):
 
 
 def test_cut_release_writes_quality_splits_and_catalog(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset")
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=6, dogs=6)
     reports_dir = tmp_path / "reports"
     policy = load_quality_policy(_policy_path(tmp_path))
 
@@ -142,7 +74,7 @@ def test_cut_release_writes_quality_splits_and_catalog(tmp_path):
 
 
 def test_cut_release_rejects_bad_version_format(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset")
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=6, dogs=6)
     policy = load_quality_policy(_policy_path(tmp_path))
 
     with pytest.raises(ValueError, match="vMAJOR.MINOR.PATCH"):
@@ -150,7 +82,7 @@ def test_cut_release_rejects_bad_version_format(tmp_path):
 
 
 def test_cut_release_rejects_duplicate_version(tmp_path):
-    dataset_dir = _write_dataset(tmp_path / "dataset")
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=6, dogs=6)
     reports_dir = tmp_path / "reports"
     policy = load_quality_policy(_policy_path(tmp_path))
     cut_release("v0.1.0", dataset_dir=dataset_dir, reports_dir=reports_dir, policy=policy)
@@ -163,10 +95,10 @@ def test_diff_releases_compares_two_cut_releases(tmp_path):
     reports_dir = tmp_path / "reports"
     policy = load_quality_policy(_policy_path(tmp_path))
 
-    dataset_a = _write_dataset(tmp_path / "dataset-a", cats=6, dogs=6)
+    dataset_a = write_coco_dataset(tmp_path / "dataset-a", cats=6, dogs=6)
     cut_release("v0.1.0", dataset_dir=dataset_a, reports_dir=reports_dir, policy=policy)
 
-    dataset_b = _write_dataset(tmp_path / "dataset-b", cats=9, dogs=6)
+    dataset_b = write_coco_dataset(tmp_path / "dataset-b", cats=9, dogs=6)
     cut_release("v0.2.0", dataset_dir=dataset_b, reports_dir=reports_dir, policy=policy)
 
     diff = diff_releases("v0.1.0", "v0.2.0", reports_dir=reports_dir)
@@ -180,7 +112,7 @@ def test_diff_releases_compares_two_cut_releases(tmp_path):
 def test_diff_releases_rejects_unknown_version(tmp_path):
     reports_dir = tmp_path / "reports"
     policy = load_quality_policy(_policy_path(tmp_path))
-    dataset_dir = _write_dataset(tmp_path / "dataset")
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=6, dogs=6)
     cut_release("v0.1.0", dataset_dir=dataset_dir, reports_dir=reports_dir, policy=policy)
 
     with pytest.raises(ValueError, match="no existe"):

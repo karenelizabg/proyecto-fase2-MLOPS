@@ -53,3 +53,12 @@ def load_dataset(annotations_dir: Path) -> CocoDataset:
             "categories": list(categories_by_id.values()),
         }
     )
+
+
+def load_image_bytes(coco: CocoDataset, images_dir: Path) -> dict[int, bytes]:
+    """Lee del disco los binarios de cada imagen declarada en `coco`.
+
+    Compartido por `presentation.gate` y `presentation.release`: ambos
+    necesitan los mismos bytes por `image_id` para correr pHash.
+    """
+    return {image.id: (images_dir / image.file_name).read_bytes() for image in coco.images}

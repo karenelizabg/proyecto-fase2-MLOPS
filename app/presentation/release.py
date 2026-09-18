@@ -26,7 +26,7 @@ import re
 from pathlib import Path
 
 from analyzers.duplicates import analyze_duplicates
-from ingestion.loader import load_dataset
+from ingestion.loader import load_dataset, load_image_bytes
 from policies.duplicates import load_duplicate_config
 from policies.models import QualityPolicy
 from presentation.contracts import DatasetRelease, VersionsReport
@@ -38,10 +38,6 @@ from splits.stratified import split_dataset
 logger = logging.getLogger("dataset-release")
 
 SEMVER_PATTERN = re.compile(r"^v\d+\.\d+\.\d+$")
-
-
-def _load_image_bytes(coco, images_dir: Path) -> dict[int, bytes]:
-    return {image.id: (images_dir / image.file_name).read_bytes() for image in coco.images}
 
 
 def _load_catalog(catalog_path: Path) -> VersionsReport:
@@ -68,7 +64,7 @@ def cut_release(
 
     coco = load_dataset(dataset_dir / "annotations")
     images_dir = dataset_dir / "images"
-    image_contents = _load_image_bytes(coco, images_dir)
+    image_contents = load_image_bytes(coco, images_dir)
 
     quality_report = build_quality_report(
         dataset_dir=dataset_dir, policy=policy, dataset_version=version
