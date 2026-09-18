@@ -190,6 +190,9 @@ cross_split_leakage:
 duplicate_similarity_threshold:
   threshold: 0.999
   action: warn
+min_spatial_dispersion:
+  threshold: 0.0
+  action: warn
 """,
         encoding="utf-8",
     )
