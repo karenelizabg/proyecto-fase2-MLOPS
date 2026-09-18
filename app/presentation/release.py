@@ -23,7 +23,6 @@ import argparse
 import json
 import logging
 import re
-import sys
 from pathlib import Path
 
 from analyzers.duplicates import analyze_duplicates
@@ -159,7 +158,10 @@ def diff_releases(version_a: str, version_b: str, *, reports_dir: Path) -> dict:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
+    """Sin exit code propio: un fallo real se señala con una excepción (no
+    con un entero), así que no hay dos ramas de éxito devolviendo el mismo
+    valor por separado."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(prog="presentation.release")
     subparsers = parser.add_subparsers(dest="action", required=True)
@@ -184,12 +186,10 @@ def main(argv: list[str] | None = None) -> int:
             reports_dir=settings.reports_dir,
             policy=settings.quality,
         )
-        return 0
-
-    result = diff_releases(args.version_a, args.version_b, reports_dir=settings.reports_dir)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-    return 0
+    else:
+        result = diff_releases(args.version_a, args.version_b, reports_dir=settings.reports_dir)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
