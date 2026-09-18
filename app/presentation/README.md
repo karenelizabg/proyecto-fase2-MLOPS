@@ -117,10 +117,10 @@ en esta copia. Cualquier necesidad nueva debe discutirse antes de cambiar v1.0.
 
 `gate.py` es el primer código que efectivamente corre el pipeline contra el
 dataset real: `ingestion/loader.py` junta los `annotations-lote-*.json` de
-`data/raw/annotations/` en un `CocoDataset` validado, corre los 4
+`data/raw/annotations/` en un `CocoDataset` validado, corre los 5
 analizadores existentes (`imbalance`, `small_objects`, `invalid_boxes`,
-`duplicates`), arma un `QualityReport` real (no el ejemplo) y lo escribe en
-`REPORTS_DIR/quality.json`.
+`duplicates`, `spatial_bias`), arma un `QualityReport` real (no el ejemplo)
+y lo escribe en `REPORTS_DIR/quality.json`.
 
 - `min_images_per_class` no es su propio analizador (vive dentro de
   `imbalance.py`, ver `details.classes_below_minimum`); el gate lo deriva
@@ -130,8 +130,12 @@ analizadores existentes (`imbalance`, `small_objects`, `invalid_boxes`,
   (ver `analyzers/duplicates.py` y su test); el gate lo renombra a
   `duplicate_similarity_threshold` en el reporte — el nombre de la política
   que en verdad evalúa — sin tocar el analizador ya mergeado.
+- `spatial_bias` (P2-29) mide dispersión del centro normalizado de las
+  cajas; el ticket original no definía el algoritmo, se confirmó con Andy
+  (ver `analyzers/README.md`). `quality.yaml` gana una clave nueva
+  (`min_spatial_dispersion`) que no existía para ningún analizador previo.
 - `cross_split_leakage` NO se incluye: requiere splits reales, que no
-  existen hasta que se implemente ese tier. El reporte solo declara los 5
+  existen hasta que se implemente ese tier. El reporte solo declara los 6
   checks que sí se pueden evaluar hoy; no se inventa ese dato.
 - `main()` devuelve `1` si algún check con `action: fail` no pasó — pensado
   para encadenarse como dependencia dura de la siguiente etapa

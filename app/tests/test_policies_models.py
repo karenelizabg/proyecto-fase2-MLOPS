@@ -15,6 +15,7 @@ VALID = {
     "degenerate_boxes": {"threshold": 0, "action": "fail"},
     "cross_split_leakage": {"threshold": 0, "action": "fail"},
     "duplicate_similarity_threshold": {"threshold": 0.94, "action": "warn"},
+    "min_spatial_dispersion": {"threshold": 0.15, "action": "warn"},
 }
 
 
