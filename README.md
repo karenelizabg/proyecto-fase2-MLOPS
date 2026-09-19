@@ -723,7 +723,8 @@ uv run python -m presentation.release diff v0.1.0 v0.2.0
 - `dvc status -r dev` y `dvc status -r prod` reportan "in sync" (content
   hash idéntico, verificado).
 - `reports/versions.json` sigue el contrato `VersionsReport` v1.0 y usa
-  versionado semántico (`v0.1.0` cortado, ver `reports/releases/v0.1.0/`).
+  versionado semántico (`v0.1.0` histórico y `v0.1.1` válido, ver
+  `reports/releases/`).
 - `presentation.release diff <a> <b>` genera un diff real entre dos
   releases (conteo por categoría y status de cada check).
 

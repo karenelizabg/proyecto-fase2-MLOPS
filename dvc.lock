@@ -3,59 +3,22 @@ stages:
   quality_gate:
     cmd: uv run python dvc_gate_stage.py
     deps:
-    - path: ../data/raw/annotations
-      hash: md5
-      md5: 8bd7d8e8f4dcb65edf95d8f38822cc53.dir
-      size: 257094
-      nfiles: 10
-    - path: ../data/raw/images
-      hash: md5
-      md5: 951150dd4fb053f4665089fcb37a1c87.dir
-      size: 13556278
-      nfiles: 600
-    - path: analyzers
-      hash: md5
-      md5: fbb54e6c79513f97cf98333f62270c92.dir
-      size: 52426
-      nfiles: 15
-    - path: dvc_gate_stage.py
-      hash: md5
-      md5: da62f4abd082e7aa26d415f1df71b297
-      size: 2008
-    - path: ingestion
-      hash: md5
-      md5: cf758ce4cd59ce7cc4a14e8554fe2177.dir
-      size: 17098
-      nfiles: 7
-    - path: policies
-      hash: md5
-      md5: 6a8b5d4091d275080864bf8c882701fa.dir
-      size: 13277
-      nfiles: 15
-    - path: presentation/contracts.py
-      hash: md5
-      md5: e1369c0008df2568dbaebb70ccbd2fb0
-      size: 3671
-    - path: presentation/gate.py
-      hash: md5
-      md5: 2c4fdbfca1b2d312ec1cc71445de5bdf
-      size: 7569
-    - path: storage/settings.py
-      hash: md5
-      md5: 1d4364e0462de28b4676a7251dc97b7a
-      size: 3064
-    outs:
     - path: ../reports/quality.json
       hash: md5
-      md5: fe2f58e89afe1c436a0bbc9a43ba0452
-      size: 21982
+      md5: 042bdd8c17dada05ad94ab21c7c6196e
+      size: 27077
+    outs:
+    - path: ../reports/.quality_gate.passed
+      hash: md5
+      md5: df7270ac1a00ae2b054e3a00a7af435c
+      size: 8
   projections:
     cmd: uv run python dvc_projections_stage.py
     deps:
     - path: ../data/raw/annotations
       hash: md5
-      md5: 8bd7d8e8f4dcb65edf95d8f38822cc53.dir
-      size: 257094
+      md5: c7cb86ae7ece94ef7b853620e464a4d7.dir
+      size: 256669
       nfiles: 10
     - path: ../data/raw/images
       hash: md5
@@ -68,68 +31,68 @@ stages:
       size: 229
     - path: dvc_projections_stage.py
       hash: md5
-      md5: f91eb11904bd329dfc9eff77a7795672
-      size: 1080
+      md5: 55105135a3aab9c8c312d10b28ba518d
+      size: 1115
     - path: ingestion/__init__.py
       hash: md5
       md5: 348c29beb25cb2c7bdd00120146d1ec6
       size: 220
     - path: ingestion/loader.py
       hash: md5
-      md5: ef5e6cf0ef2d082b0a86aae488b1469b
-      size: 2717
+      md5: 8aaaf4589a0eaaa1e30088775842067a
+      size: 2686
     - path: ingestion/models.py
       hash: md5
-      md5: bd165d23ec0be422d3cf789ac3da6bda
-      size: 3206
+      md5: 2623bd72e7f8719bde6c7d8354f84eeb
+      size: 3297
     - path: policies/models.py
       hash: md5
-      md5: 74bf2de1b7d3ad7d5749c46a42fc1743
-      size: 1405
+      md5: 70949f1ba9c5a605b6546d8f7fcac524
+      size: 1448
     - path: policies/quality.yaml
       hash: md5
-      md5: 6b7ed64be85828614dac8a1341a3b91f
-      size: 1264
+      md5: a32bf97c1ece8d78f06703b8a9c3f498
+      size: 1306
     - path: presentation/__init__.py
       hash: md5
       md5: 7867f173e84e7d9c8bf8c089532208dd
       size: 223
     - path: presentation/contracts.py
       hash: md5
-      md5: 044853f0d9806b1d12af1e414dfb4ccc
-      size: 3559
+      md5: e1369c0008df2568dbaebb70ccbd2fb0
+      size: 3671
     - path: presentation/projections.py
       hash: md5
-      md5: 009933c417b69be2b7b4c76db9f81b64
-      size: 4233
+      md5: e22a43a22f561ac338d0f803a210c899
+      size: 4343
     - path: presentation/projections_contracts.py
       hash: md5
-      md5: a6e9fae2f8ce872ed1e8be92e4ea721f
-      size: 3223
+      md5: fc00c1b0c26481db192d510eda303ac6
+      size: 3317
     - path: projections/__init__.py
       hash: md5
-      md5: 9eb98c01fe1aecc710255729eabb8825
-      size: 90
+      md5: 0cccdddc8556f87a5c64f6db902fdecb
+      size: 91
     - path: projections/compute.py
       hash: md5
-      md5: 92b039ea7864665c947ed8629bfa32cf
-      size: 4089
+      md5: 09c9254ae828cb63242b100b22fa8c50
+      size: 4185
     - path: projections/models.py
       hash: md5
-      md5: 7174a3f3dcc49d075ea63c4e349f31ab
-      size: 2276
+      md5: fb148f201d93f709f7d7da7317b92f5d
+      size: 2350
     - path: pyproject.toml
       hash: md5
-      md5: e26228aea5b8ed3f1f16396f9542fed5
-      size: 914
+      md5: 21cc15174ff6bec340db6aa3265ae084
+      size: 1282
     - path: storage/settings.py
       hash: md5
-      md5: 7bd2bd600f52d2adb32fafa92abf79b8
-      size: 3360
+      md5: dfad2f55c15d16aafa437f9120049a5b
+      size: 4232
     - path: uv.lock
       hash: md5
-      md5: 3e8388d6b3b8a44a537e2873cb54b706
-      size: 105468
+      md5: 7a9d68823b5f96fcf748c242b04b3336
+      size: 115301
     params:
       projections/projections.yaml:
         dataset_version: local-dev
@@ -156,5 +119,134 @@ stages:
     outs:
     - path: ../reports/projections.json
       hash: md5
-      md5: b2a0026be8ddf0c6928acdc35bd6f267
-      size: 230987
+      md5: ca8496e813c04250f502757fe5379cc8
+      size: 241755
+  quality_report:
+    cmd: uv run python dvc_quality_report_stage.py
+    deps:
+    - path: ../data/raw/annotations
+      hash: md5
+      md5: c7cb86ae7ece94ef7b853620e464a4d7.dir
+      size: 256669
+      nfiles: 10
+    - path: ../data/raw/images
+      hash: md5
+      md5: 951150dd4fb053f4665089fcb37a1c87.dir
+      size: 13556278
+      nfiles: 600
+    - path: analyzers
+      hash: md5
+      md5: a62d8df9cb30be57d7172f9cdadc58bc.dir
+      size: 63424
+      nfiles: 17
+    - path: dvc_quality_report_stage.py
+      hash: md5
+      md5: fbc5e23fc611e984b3504f326e898b21
+      size: 785
+    - path: ingestion
+      hash: md5
+      md5: 2cde3c77889cf7e9d9303a3d1bfbc1d0.dir
+      size: 17833
+      nfiles: 7
+    - path: policies
+      hash: md5
+      md5: 6ec8913733bac171a8aafc9005b53260.dir
+      size: 12164
+      nfiles: 14
+    - path: presentation/contracts.py
+      hash: md5
+      md5: e1369c0008df2568dbaebb70ccbd2fb0
+      size: 3671
+    - path: presentation/gate.py
+      hash: md5
+      md5: 1ea052562871546c62ab7823c4f5cdcc
+      size: 8890
+    - path: splits/__init__.py
+      hash: md5
+      md5: a46b91acd643cdbea84fbd902a6e825e
+      size: 146
+    - path: splits/models.py
+      hash: md5
+      md5: 759fb195a02f56cc4b1f18050a993006
+      size: 1327
+    - path: splits/stratified.py
+      hash: md5
+      md5: 9416c09c0fd49bfc4fc4d6f91d6b91e5
+      size: 12792
+    - path: storage/settings.py
+      hash: md5
+      md5: dfad2f55c15d16aafa437f9120049a5b
+      size: 4232
+    params:
+      splits/splits.yaml:
+        seed: 42
+        test: 0.15
+        train: 0.7
+        val: 0.15
+    outs:
+    - path: ../reports/quality.json
+      hash: md5
+      md5: 042bdd8c17dada05ad94ab21c7c6196e
+      size: 27077
+  split:
+    cmd: uv run python dvc_split_stage.py
+    deps:
+    - path: ../data/raw/annotations
+      hash: md5
+      md5: c7cb86ae7ece94ef7b853620e464a4d7.dir
+      size: 256669
+      nfiles: 10
+    - path: ../data/raw/images
+      hash: md5
+      md5: 951150dd4fb053f4665089fcb37a1c87.dir
+      size: 13556278
+      nfiles: 600
+    - path: ../reports/.quality_gate.passed
+      hash: md5
+      md5: df7270ac1a00ae2b054e3a00a7af435c
+      size: 8
+    - path: analyzers
+      hash: md5
+      md5: a62d8df9cb30be57d7172f9cdadc58bc.dir
+      size: 63424
+      nfiles: 17
+    - path: dvc_split_stage.py
+      hash: md5
+      md5: 2665ee9e40492022221a2d869a932674
+      size: 1216
+    - path: ingestion
+      hash: md5
+      md5: 2cde3c77889cf7e9d9303a3d1bfbc1d0.dir
+      size: 17833
+      nfiles: 7
+    - path: policies
+      hash: md5
+      md5: 6ec8913733bac171a8aafc9005b53260.dir
+      size: 12164
+      nfiles: 14
+    - path: presentation/contracts.py
+      hash: md5
+      md5: e1369c0008df2568dbaebb70ccbd2fb0
+      size: 3671
+    - path: presentation/gate.py
+      hash: md5
+      md5: 1ea052562871546c62ab7823c4f5cdcc
+      size: 8890
+    - path: presentation/splits.py
+      hash: md5
+      md5: 5e88eeb9dfd2c8630966c5f9e5f92c8f
+      size: 978
+    - path: splits
+      hash: md5
+      md5: 9bec0058ec1faedf6e333c258fbafdaf.dir
+      size: 46743
+      nfiles: 8
+    - path: storage/settings.py
+      hash: md5
+      md5: dfad2f55c15d16aafa437f9120049a5b
+      size: 4232
+    outs:
+    - path: ../reports/splits.json
+      hash: md5
+      md5: 48b9eb3b0d6cfeb2ac233e0029fcf114
+      size: 327

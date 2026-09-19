@@ -15,3 +15,6 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
+
+# Marcador interno de la compuerta DVC; se recrea en cada repro aprobado.
+reports/.quality_gate.passed
