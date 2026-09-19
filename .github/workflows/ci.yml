@@ -47,6 +47,8 @@ jobs:
         run: uv run --locked --no-build ruff format --check .
       - name: Tests
         run: uv run --locked --no-build pytest -q
+      - name: Mutation test (quality gate)
+        run: uv run --locked --no-build python ../.github/scripts/run_gate_mutation.py
 
   backend:
     name: Backend (Biome, tsc, tests y build)
