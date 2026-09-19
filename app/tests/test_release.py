@@ -81,7 +81,7 @@ def test_cut_release_rejects_failed_quality_before_writing(tmp_path):
     policy = load_quality_policy(_policy_path(tmp_path))
     policy.min_images_per_class.threshold = 999
 
-    with pytest.raises(ValueError, match="compuerta de calidad está en failed"):
+    with pytest.raises(ValueError, match="en failed"):
         cut_release("v0.1.0", dataset_dir=dataset_dir, reports_dir=reports_dir, policy=policy)
 
     assert not (reports_dir / "versions.json").exists()

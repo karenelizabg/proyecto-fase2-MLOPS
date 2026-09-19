@@ -72,7 +72,13 @@ def test_dvc_pipeline_has_report_gate_and_downstream_split():
     assert stages["quality_gate"]["deps"] == ["../reports/quality.json"]
     assert any(
         output == "../reports/.quality_gate.passed"
-        or output.get("path") == "../reports/.quality_gate.passed"
+        or (
+            isinstance(output, dict)
+            and (
+                output.get("path") == "../reports/.quality_gate.passed"
+                or "../reports/.quality_gate.passed" in output
+            )
+        )
         for output in stages["quality_gate"]["outs"]
     )
     assert "../reports/.quality_gate.passed" in stages["split"]["deps"]

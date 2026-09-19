@@ -1,45 +1,41 @@
-"""Wrapper del stage `quality_gate` de `dvc.yaml` (P2-42).
+"""DVC stage that blocks downstream stages when the report is failed."""
 
-DVC ejecuta `cmd` a través del shell del sistema operativo (`cmd.exe` en
-Windows), que no soporta la sintaxis `VAR=valor comando` de bash/sh usada
-en los ejemplos de `presentation/README.md`. Este script fija las mismas
-variables con `os.environ` antes de invocar `presentation.gate.main()`,
-así el stage funciona igual en Windows/Mac/Linux sin depender de sintaxis
-de shell específica de una plataforma.
-
-`DATABASE_URL`/`MINIO_*` son campos requeridos por `storage.Settings`
-(tier 5 agrupa toda la config junta) pero `gate.py` nunca los usa — no
-abre conexiones a MariaDB ni MinIO — así que un valor placeholder basta.
-
-Llama a `gate.run()`, no a `gate.main()`: `run()` siempre escribe
-`quality.json` y no decide exit code (ver el propio docstring de
-`gate.py`); `main()` sí devuelve 1 cuando `status == "failed"`, pensado
-para un paso de CI que bloquee expresamente, no para `dvc repro`. Si este
-stage usara `main()`, "el dataset todavía no cumple la meta" (un estado
-real y esperado, ver `app/presentation/README.md`) impediría regenerar
-`dvc.lock` — confundiría "¿corrió el cómputo?" con "¿pasó la calidad?".
-"""
-
+import logging
 import os
-import sys
 from pathlib import Path
 
+from presentation.contracts import QualityReport
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
+REPORTS_DIR = Path(os.environ.get("REPORTS_DIR", REPO_ROOT / "reports"))
+REPORT_PATH = REPORTS_DIR / "quality.json"
+PASS_MARKER = REPORTS_DIR / ".quality_gate.passed"
+logger = logging.getLogger("dvc-quality-gate")
 
-os.environ.setdefault("DATABASE_URL", "unused")
-os.environ.setdefault("MINIO_ENDPOINT", "unused")
-os.environ.setdefault("MINIO_PORT", "9000")
-os.environ.setdefault("MINIO_ACCESS_KEY", "unused")
-os.environ.setdefault("MINIO_SECRET_KEY", "unused")
-os.environ.setdefault("MINIO_BUCKET", "unused")
-os.environ.setdefault("DATASET_DIR", str(REPO_ROOT / "data" / "raw"))
-os.environ.setdefault("REPORTS_DIR", str(REPO_ROOT / "reports"))
 
-import logging  # noqa: E402 - env vars must be set first
+def enforce_quality_gate() -> int:
+    """Return a non-zero status for failed reports and mark accepted reports."""
+    PASS_MARKER.unlink(missing_ok=True)
+    if not REPORT_PATH.exists():
+        logger.error("No existe el reporte de calidad: %s", REPORT_PATH)
+        return 1
 
-from presentation.gate import run  # noqa: E402 - env vars must be set first
+    try:
+        report = QualityReport.model_validate_json(REPORT_PATH.read_text(encoding="utf-8"))
+    except ValueError:
+        logger.exception("El reporte de calidad no cumple el contrato: %s", REPORT_PATH)
+        return 1
+
+    if report.status == "failed":
+        logger.error("Compuerta de calidad BLOQUEADA: el reporte tiene status=failed.")
+        return 1
+
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    PASS_MARKER.write_text("passed\n", encoding="utf-8")
+    logger.info("Compuerta de calidad OK (status=%s).", report.status)
+    return 0
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run()
-    sys.exit(0)
+    raise SystemExit(enforce_quality_gate())

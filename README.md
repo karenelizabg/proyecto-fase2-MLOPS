@@ -52,8 +52,8 @@ docker compose up --build
 
 Este comando levanta los cuatro servicios (MariaDB, MinIO, backend y
 frontend). El backend espera a que MariaDB y MinIO estén listos, aplica las
-migraciones y siembra datos de ejemplo automáticamente antes de arrancar; no
-hace falta ejecutar ningún paso manual.
+migraciones y siembra únicamente las categorías `dog` y `cat` antes de
+arrancar; no crea imágenes demo ni hace falta ejecutar otro paso manual.
 
 | Servicio        | URL                              |
 |-----------------|-----------------------------------|
@@ -645,35 +645,27 @@ Antes de cerrar P2-04, verificar:
 
 Hasta este ticket, el dataset se manejaba con `dvc add` suelto: reproducible
 como almacenamiento de archivos, pero sin un pipeline declarado con
-dependencias/salidas. `dvc.yaml` define un stage, `quality_gate`, que corre
-la compuerta de calidad real (`app/presentation/gate.py`) contra
-`data/raw/annotations` + `data/raw/images` y escribe `reports/quality.json`.
+dependencias/salidas. `dvc.yaml` separa el cálculo del reporte (`quality_report`)
+de la decisión de la compuerta (`quality_gate`) y agrega `split` como etapa
+posterior. Un reporte `failed` hace que DVC termine con código distinto de cero
+y evita ejecutar las etapas dependientes.
 
 ```bash
 dvc repro
 ```
 
-- **`app/dvc_gate_stage.py`** es un wrapper, no un cambio a `gate.py`: DVC
-  ejecuta `cmd` vía el shell del sistema operativo (`cmd.exe` en Windows),
-  que no soporta `VAR=valor comando` (sintaxis bash usada en los ejemplos
-  de `app/presentation/README.md`). El wrapper fija con `os.environ` los
-  mismos valores placeholder que `DATABASE_URL`/`MINIO_*` necesitan (campos
-  requeridos por `storage.Settings`, nunca usados por el gate) antes de
-  llamar a `gate.run()` — no a `gate.main()`, que si el dataset no pasa la
-  compuerta devuelve `exit 1` y rompería `dvc repro` para un estado
-  legítimo y esperado del dataset (ver `min_images_per_class` en la sección
-  de Frente 1 más abajo). `dvc repro` solo debe fallar si el cómputo en sí
-  falla, no si el reporte resultante dice `status: failed`.
+- **`app/dvc_quality_report_stage.py`** calcula `reports/quality.json` sin
+  decidir si el dataset puede avanzar. **`app/dvc_gate_stage.py`** lee ese
+  reporte y devuelve `exit 1` cuando `status: failed`; solo en caso aprobado
+  escribe `reports/.quality_gate.passed`, que es la dependencia explícita de
+  `split`.
 - **`reports/quality.json` es un `metrics`, no un `outs`**, con
   `cache: false`: es un reporte chico y legible, pensado para diffs de PR y
   `dvc metrics diff`, no un artefacto binario que amerite el object store
   de DVC.
-- **`always_changed: true`**: en esta máquina (con `Documents` sincronizado
-  por OneDrive), el run-cache interno de DVC (`.dvc/cache/runs/`) falla con
-  `WinError 3` durante su propio `move()` de archivo temporal — no es un
-  bug de este stage. `always_changed` evita ese código por completo; el
-  costo es que el stage siempre se re-ejecuta en `dvc repro` en vez de
-  saltarse cuando nada cambió, aceptable dado lo barato que es correrlo.
+- El pipeline no usa `always_changed`: una segunda ejecución de `dvc repro`
+  puede reutilizar el run-cache y no rehacer etapas cuando sus entradas no
+  cambiaron.
 - Los remotes `dev`/`prod` de P2-04 ya existían; lo que faltaba en un
   checkout nuevo era el paso local `dvc remote modify --local dev
   access_key_id/secret_access_key` (con `$MINIO_ROOT_USER`/
@@ -683,9 +675,11 @@ dvc repro
 
 ### Criterios de aceptación
 
-- `dvc.yaml` define el stage `quality_gate` con dependencias y salida reales.
+- `dvc.yaml` define `quality_report`, `quality_gate` y `split` con dependencias
+  y salidas reales; un `failed` bloquea el downstream.
 - `dvc.lock` y `dvc.yaml` versionados en Git; los datos siguen fuera de Git.
-- `dvc repro` corre limpio y regenera `reports/quality.json`.
+- `dvc repro` regenera `reports/quality.json`; si el reporte queda `failed`,
+  termina con código distinto de cero y no ejecuta `split`.
 - `dvc push`/`dvc pull` funcionan contra `dev` y `prod` (verificado: 612
   archivos sincronizados en `dev`, `prod` ya en uso durante todo el proyecto).
 
@@ -715,10 +709,9 @@ uv run python -m presentation.release diff v0.1.0 v0.2.0
   su ubicación/ignore o seguimiento DVC"), porque `DatasetRelease` exige
   `quality_file` y `splits_file`, este ticket fue quien tuvo que decidirlo:
   `reports/releases/<version>/splits.json`, escrito por `cut_release()`.
-- **Version inicial: `v0.1.0`, no `v1.0.0`**: la compuerta de calidad sigue
-  en `status: failed` (`person`/`car` en 0 imágenes, ver Frente 1) —
-  `v0.1.0` refleja honestamente que el dataset todavía no está completo,
-  en vez de anunciar como 1.0 algo que la propia compuerta rechaza.
+- **El release respeta la compuerta**: el catálogo histórico `v0.1.0` puede
+  conservar un reporte `failed`, pero `cut_release()` rechaza cualquier nuevo
+  corte cuyo reporte esté en `status: failed`.
 - **Un release es inmutable**: `cut_release()` rechaza un `version` que ya
   existe en el catálogo en vez de sobreescribirlo.
 - **`diff_releases()` no vuelve a correr el gate**: lee los dos
@@ -830,7 +823,7 @@ son fáciles de mover porque todo el pipeline está aislado en `app/`:
 existente ofrece `GET /settings`, `PUT /settings/quality` y
 `PUT /settings/splits` (desde el navegador, `/api/settings/...`).
 
-- Quality permite editar threshold/action de los seis checks reales y
+- Quality permite editar threshold/action de los siete checks reales y
   width_px/height_px de objetos pequeños. La similitud pHash es un umbral de
   detección; el cumplimiento sigue exigiendo cero pares.
 - Splits permite editar train/val/test (fracciones estrictamente entre 0 y 1,
@@ -867,8 +860,9 @@ Cada release recibe una política para quality y pHash, y una SplitsConfig
 cargada una vez; ya no recarga otra política para agrupar duplicados.
 
 Estos YAML siguen siendo configuración versionada en Git; guardar puede
-dejar cambios locales que deben revisarse. DVC ya observa `policies/` para
-quality_gate; no se añade ningún stage. Desde P2-53, quality_gate también registra ratios y seed de splits. Cambiarlos
+dejar cambios locales que deben revisarse. DVC observa `policies/` y
+`splits/splits.yaml` desde `quality_report`/`split`. Desde P2-53, quality_gate
+también registra ratios y seed de splits. Cambiarlos
 afecta la próxima evaluación de leakage y el próximo corte de release,
 sin reescribir los splits congelados.
 

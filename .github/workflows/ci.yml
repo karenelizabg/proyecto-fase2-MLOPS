@@ -124,12 +124,33 @@ jobs:
           MINIO_ROOT_PASSWORD: ci
         run: docker compose config --quiet
 
+  quality-gate:
+    name: Quality gate (fixture)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.13"
+          enable-cache: true
+          cache-dependency-glob: app/uv.lock
+      - name: Instalar dependencias
+        run: uv sync --locked --no-build
+      - name: Ejecutar compuerta sobre fixture COCO
+        run: uv run --locked --no-build pytest -q tests/test_quality_gate_ci.py
+
   ci-ok:
     name: CI OK
     # `always()`: si un job falla, este también debe correr y fallar. Sin esto, un job
     # fallido dejaría a `CI OK` en "skipped", y GitHub lo trata como aprobado.
     if: always()
-    needs: [python, backend, frontend, compose]
+    needs: [python, backend, frontend, compose, quality-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
