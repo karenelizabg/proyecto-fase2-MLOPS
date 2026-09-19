@@ -21,7 +21,9 @@ const QUALITY_FIXTURE = {
       check_name: "max_imbalance_ratio",
       passed: true,
       metric_value: 1.0,
-      details: {},
+      details: {
+        images_per_category: [{ category_name: "fixture", image_count: 1200 }],
+      },
       action: "warn",
     },
     {
@@ -31,7 +33,13 @@ const QUALITY_FIXTURE = {
       details: {},
       action: "warn",
     },
-    { check_name: "degenerate_boxes", passed: true, metric_value: 0.0, details: {}, action: "fail" },
+    {
+      check_name: "degenerate_boxes",
+      passed: true,
+      metric_value: 0.0,
+      details: { total_annotations: 668 },
+      action: "fail",
+    },
     {
       check_name: "duplicate_similarity_threshold",
       passed: true,
@@ -96,13 +104,13 @@ function renderPipelineAt(path: string) {
 }
 
 describe("SPEC-PIPELINE-UI-001 - UI del pipeline contra los reportes reales (P2-14/22/23/24)", () => {
-  it("Overview muestra datos que vienen de /reports/quality.json y splits.json, no hardcodeados", async () => {
+  it("Overview muestra métricas coherentes del mismo quality.json, no hardcodeadas", async () => {
     mockAllReportsAvailable();
     renderPipelineAt("/pipeline/overview");
 
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/demo-v1\.0\.0/)).toBeInTheDocument());
-    // total_images de splits.json (separador de miles en formato "es")
+    // total_images de quality.json (separador de miles en formato "es")
     expect(await screen.findByText((1200).toLocaleString("es"))).toBeInTheDocument();
     // checks.length de quality.json
     expect(screen.getByText("5")).toBeInTheDocument();
@@ -143,7 +151,7 @@ describe("SPEC-PIPELINE-UI-001 - UI del pipeline contra los reportes reales (P2-
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
   });
 
-  it("Overview no se rompe si splits.json/versions.json todavía no existen (404)", async () => {
+  it("Overview no se rompe si versions.json todavía no existe (404)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) => {
@@ -154,7 +162,7 @@ describe("SPEC-PIPELINE-UI-001 - UI del pipeline contra los reportes reales (P2-
     renderPipelineAt("/pipeline/overview");
 
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
-    expect(await screen.findAllByText("No disponible")).toHaveLength(2);
+    expect(await screen.findAllByText("No disponible")).toHaveLength(1);
     // Los datos que sí llegaron (quality.json) igual se muestran.
     expect(screen.getByText("5")).toBeInTheDocument();
   });
