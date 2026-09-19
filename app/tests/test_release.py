@@ -44,7 +44,6 @@ def test_cut_release_writes_quality_splits_and_catalog(tmp_path):
     reports_dir = tmp_path / "reports"
     policy = load_quality_policy(_policy_path(tmp_path))
 
-    policy.min_images_per_class.threshold = 999
     release = cut_release("v0.1.0", dataset_dir=dataset_dir, reports_dir=reports_dir, policy=policy)
 
     assert release.dataset_version == "v0.1.0"
@@ -64,7 +63,7 @@ def test_cut_release_writes_quality_splits_and_catalog(tmp_path):
 
     quality = json.loads(quality_path.read_text(encoding="utf-8"))
     assert quality["dataset_version"] == "v0.1.0"
-    assert quality["status"] == "failed"  # Releases retain the existing policy.
+    assert quality["status"] != "failed"
     assert len(quality["checks"]) == 7
     splits = json.loads(splits_path.read_text(encoding="utf-8"))
     assert splits["total_images"] == 12
@@ -74,6 +73,19 @@ def test_cut_release_writes_quality_splits_and_catalog(tmp_path):
         + splits["splits"]["test"]["image_count"]
         == 12
     )
+
+
+def test_cut_release_rejects_failed_quality_before_writing(tmp_path):
+    dataset_dir = write_coco_dataset(tmp_path / "dataset", cats=6, dogs=6)
+    reports_dir = tmp_path / "reports"
+    policy = load_quality_policy(_policy_path(tmp_path))
+    policy.min_images_per_class.threshold = 999
+
+    with pytest.raises(ValueError, match="compuerta de calidad está en failed"):
+        cut_release("v0.1.0", dataset_dir=dataset_dir, reports_dir=reports_dir, policy=policy)
+
+    assert not (reports_dir / "versions.json").exists()
+    assert not (reports_dir / "releases" / "v0.1.0").exists()
 
 
 def test_cut_release_rejects_bad_version_format(tmp_path):
