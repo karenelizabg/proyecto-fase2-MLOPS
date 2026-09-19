@@ -9,6 +9,9 @@ import dvc_split_stage
 from analyzers.spatial_bias import SpatialBiasConfig, analyze_spatial_bias
 from policies.models import load_quality_policy
 from presentation.release import cut_release, diff_releases
+from presentation.splits import build_splits_report
+from splits.models import SplitsConfig
+from splits.stratified import split_dataset
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -141,9 +144,54 @@ def test_release_diff_reports_annotation_delta_threshold_crossing_and_metric_del
     diff = diff_releases("v0.1.0", "v0.2.0", reports_dir=reports_dir)
 
     assert diff["annotations"] == {"from": 6, "to": 9, "delta": 3}
-    assert diff["images_per_category"]["cat"] == {"from": 3, "to": 6, "delta": 3}
+    assert diff["images_per_category"]["cat"] == {"from": 3, "to": 6}
+    assert diff["image_deltas"]["cat"] == 3
     assert diff["classes_crossing_minimum"] == {
         "entered": [],
         "left": [],
     }
     assert diff["checks"]["max_small_object_ratio"]["metric_delta"] == pytest.approx(0.0)
+
+
+def test_splits_report_exposes_class_distribution_and_leakage_summary():
+    coco = {
+        "images": [
+            {"id": image_id, "width": 10, "height": 10, "file_name": f"{image_id}.jpg"}
+            for image_id in range(6)
+        ],
+        "categories": [
+            {"id": 1, "name": "cat"},
+            {"id": 2, "name": "dog"},
+        ],
+        "annotations": [
+            {
+                "id": annotation_id,
+                "image_id": image_id,
+                "category_id": category_id,
+                "bbox": [0, 0, 5, 5],
+                "area": 25,
+                "iscrowd": 0,
+            }
+            for annotation_id, (image_id, category_id) in enumerate(
+                ((0, 1), (1, 1), (2, 1), (3, 2), (4, 2), (5, 2)),
+                start=1,
+            )
+        ],
+    }
+    result = split_dataset(
+        coco,
+        SplitsConfig(train=0.5, val=0.25, test=0.25, seed=7),
+        image_contents={image_id: str(image_id).encode() for image_id in range(6)},
+        duplicate_pairs=[],
+    )
+
+    report = build_splits_report(result, dataset_version="test")
+
+    assert report.class_distribution["train"] == {"1": 1, "2": 2}
+    assert report.leakage == {
+        "status": "passed",
+        "checked_groups": 6,
+        "duplicate_groups": 0,
+        "cross_split_groups": 0,
+        "coverage": 6,
+    }
