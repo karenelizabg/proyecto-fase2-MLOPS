@@ -72,9 +72,7 @@ def cut_release(
         splits_config=splits_config,
     )
     if quality_report.status == "failed":
-        raise ValueError(
-            "No se puede cortar el release: la compuerta de calidad está en failed."
-        )
+        raise ValueError("No se puede cortar el release: la compuerta de calidad está en failed.")
     splits_report = build_splits_report(split_result, dataset_version=version)
 
     release_dir = reports_dir / "releases" / version
