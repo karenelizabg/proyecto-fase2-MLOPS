@@ -244,7 +244,7 @@ export function VersionsPage() {
             <p>Todavía no hay releases publicadas.</p>
           ) : (
             <>
-              <ReleaseComparison releases={catalog.releases} />
+              {catalog.releases.length > 1 && <ReleaseComparison releases={catalog.releases} />}
               <ul className="mt-6 space-y-4">
                 {catalog.releases.map((release) => (
                   <ReleaseCard key={release.dataset_version} release={release} />

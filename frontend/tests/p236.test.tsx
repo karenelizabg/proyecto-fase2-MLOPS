@@ -84,7 +84,7 @@ it("loads multiple releases without inventing dates or active status", async () 
   });
   open("versions");
   await screen.findByText("600 imágenes · v0.2.0");
-  expect(screen.getAllByText("failed")).toHaveLength(2);
+  expect(screen.getAllByText("failed")).toHaveLength(8);
   expect(screen.getAllByText("420")).toHaveLength(2);
   expect(screen.queryByText(/activo|autor|fecha/i)).not.toBeInTheDocument();
   expect(screen.getAllByRole("link", { name: "Reporte de splits" })[0]).toHaveAttribute(
