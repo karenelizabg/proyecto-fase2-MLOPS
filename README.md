@@ -40,18 +40,259 @@ errores tipados que la UI mapea a códigos HTTP:
 Convención de ramas, commits y PR, qué valida el CI y cómo correrlo en tu máquina:
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Onboarding de desarrollo
+
+Sigue esta sección de arriba hacia abajo en un clon nuevo. El proyecto tiene
+dos entornos Python separados: `app/.venv` para el pipeline y `.venv-dvc`
+para DVC. No los mezcles.
+
+### 1. Herramientas necesarias
+
+Obligatorias para el trabajo habitual:
+
+- Git.
+- Python 3.12.
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) para el
+  entorno Python de `app/`.
+- Docker Desktop y Docker Compose si vas a levantar los servicios locales.
+- Node.js y npm si vas a desarrollar o probar `backend/` y `frontend/`.
+- AWS CLI v2 si necesitas leer el dataset de producción desde S3.
+
+Opcionales:
+
+- Terraform CLI, únicamente para validar o trabajar en infraestructura con
+  autorización explícita.
+- MinIO local, únicamente para el remote DVC `dev`. No es necesario para
+  recuperar el dataset de producción.
+
+No necesitas access keys permanentes para el onboarding. El acceso de AWS de
+este proyecto usa IAM Identity Center / SSO con tu propia identidad.
+
+### 2. Clonar el repositorio
+
+```bash
+git clone https://github.com/karenelizabg/proyecto-fase2-MLOPS.git
+cd proyecto-fase2-MLOPS
+git status
+```
+
+La comprobación inicial debe mostrar la rama y el estado del clon. No asumas
+una ruta local concreta: trabaja desde la carpeta que acabas de clonar.
+
+### 3. Preparar Python del pipeline
+
+Desde `app/`, instala exactamente las dependencias fijadas por `uv.lock`:
+
+```bash
+cd app
+uv sync --locked --no-build
+uv run python --version
+uv run pytest -q
+cd ..
+```
+
+`uv` crea o utiliza `app/.venv`. Este entorno corresponde al pipeline,
+quality gate, analyzers, tests y Copilot Python. No lo sustituyas por
+`.venv-dvc`, que es exclusivo de DVC.
+
+### 4. Preparar el entorno separado de DVC
+
+Desde la raíz del repositorio:
+
+```bash
+python3.12 -m venv .venv-dvc
+source .venv-dvc/bin/activate
+python -m pip install 'dvc[s3]==3.67.1'
+python --version
+dvc --version
+dvc remote list
+```
+
+En PowerShell, activa el mismo entorno con:
+
+```powershell
+py -3.12 -m venv .venv-dvc
+.venv-dvc\Scripts\Activate.ps1
+```
+
+El repositorio ya está inicializado y ya contiene sus remotes. **No ejecutes
+`dvc init`.**
+
+### 5. Comprobar AWS CLI v2 (macOS)
+
+Comprueba primero si ya está instalada:
+
+```bash
+aws --version
+```
+
+Si no aparece el comando, instala AWS CLI v2 siguiendo el instalador oficial
+para macOS de [AWS](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+Por ejemplo, el instalador oficial puede ejecutarse así:
+
+```bash
+curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "/tmp/AWSCLIV2.pkg"
+sudo installer -pkg "/tmp/AWSCLIV2.pkg" -target /
+aws --version
+```
+
+### 6. Configurar IAM Identity Center / SSO
+
+Cada integrante tiene su propio usuario de IAM Identity Center. No recibas ni
+copies el password, la sesión SSO o las credenciales de otra persona.
+
+Ejecuta:
+
+```bash
+aws configure sso --profile mlops-p2
+```
+
+Cuando la CLI lo solicite, responde:
+
+| Pregunta | Valor |
+|---|---|
+| SSO session name | `mlops-p2` |
+| SSO start URL | `https://d-90667fbedf.awsapps.com/start` |
+| SSO region | `us-east-1` |
+| Registration scopes | `sso:account:access` |
+
+Se abrirá el navegador. Inicia sesión con **tu propio usuario** de IAM
+Identity Center, selecciona la cuenta que te haya asignado el administrador y
+elige el permission set que te haya autorizado. El README no fija nombres de
+usuarios, contraseñas, cuentas ni identificadores personales.
+
+Después inicia la sesión y comprueba la identidad efectiva:
+
+```bash
+aws sso login --profile mlops-p2
+aws sts get-caller-identity --profile mlops-p2
+```
+
+La salida debe corresponder a tu sesión autorizada. Cuando expire, normalmente
+basta con renovar la sesión:
+
+```bash
+aws sso login --profile mlops-p2
+```
+
+La configuración del perfil y la caché de la sesión se guardan fuera del
+repositorio, en la configuración local de AWS CLI. No copies esos archivos al
+proyecto ni los compartas.
+
+### 7. Conectar DVC con el perfil local de AWS
+
+Con `.venv-dvc` activado, configura el remote `prod` solo en tu máquina:
+
+```bash
+dvc remote modify --local prod profile mlops-p2
+git check-ignore .dvc/config.local
+dvc remote list
+```
+
+La opción `--local` es obligatoria: escribe el perfil en `.dvc/config.local`,
+no en la configuración versionada de `.dvc/config`. Ese archivo local debe
+permanecer ignorado y nunca subirse a Git.
+
+### 8. Comprobar lectura del bucket de producción
+
+Estas comprobaciones son de lectura y no modifican datos:
+
+```bash
+aws s3api head-bucket \
+  --bucket mlops-p2-dvc-cache \
+  --profile mlops-p2
+
+aws s3api list-objects-v2 \
+  --bucket mlops-p2-dvc-cache \
+  --max-keys 1 \
+  --query KeyCount \
+  --profile mlops-p2
+```
+
+Si terminan correctamente, tu sesión puede alcanzar el bucket y tiene los
+permisos requeridos para esas operaciones. Después puedes consultar el estado
+de los metadatos DVC sin subir datos:
+
+```bash
+dvc status -r prod data/raw/images.dvc data/raw/annotations.dvc
+```
+
+Descarga el dataset únicamente cuando realmente lo necesites:
+
+```bash
+dvc pull -r prod data/raw/images.dvc data/raw/annotations.dvc
+```
+
+`dvc pull` materializa archivos en tu máquina, pero no sube nada a S3. No uses
+`dvc push` como prueba de conectividad; publicar requiere autorización de
+escritura y una tarea explícita.
+
+### 9. Permisos y responsabilidades del administrador
+
+Para que el flujo funcione, el administrador debe haber creado o asignado tu
+usuario en IAM Identity Center, asignado la cuenta AWS correspondiente y
+asignado un permission set con acceso S3. Para lectura del remote DVC se
+necesitan conceptualmente permisos equivalentes a `s3:ListBucket` y
+`s3:GetObject`. Publicar datasets requiere permisos adicionales de escritura
+definidos por el administrador.
+
+### 10. MinIO / `dev` (opcional)
+
+Los remotes no son intercambiables:
+
+- `prod` = AWS S3 compartido, bucket `mlops-p2-dvc-cache`.
+- `dev` = MinIO local, bucket `dvc-cache`.
+
+Si solo necesitas recuperar el dataset de producción, no levantes MinIO. El
+flujo opcional completo está documentado en [P2-04 — MinIO local y remotes
+DVC](#p2-04--minio-local-y-remotes-dvc). Sus credenciales son locales de
+MinIO y no tienen relación con AWS SSO.
+
+### 11. Terraform (opcional y autorizado)
+
+Terraform local puede usar el perfil AWS `mlops-p2` mediante la cadena normal de
+credenciales. GitHub Actions usa OIDC, que es un mecanismo distinto; OIDC de
+GitHub no autentica automáticamente tu Mac. No ejecutes `terraform apply` ni
+`terraform destroy` como parte del onboarding. Tampoco inicialices el backend
+remoto hasta que el administrador proporcione y confirme el bucket de state.
+Consulta [terraform/README.md](terraform/README.md) para la validación estática
+y los límites operativos.
+
+### 12. Variables locales y seguridad
+
+El `.env` de la raíz es para configuración local de Compose/MinIO/Copilot. No
+coloques credenciales AWS, passwords, sesiones SSO ni access keys en `.env`.
+`ANTHROPIC_API_KEY` es opcional y solo se necesita para utilizar el chat
+Copilot; nunca pongas una API key real en esta documentación.
+
+Cada persona usa su propia identidad AWS, no comparte passwords, sesiones SSO
+ni access keys, y mantiene `.dvc/config.local` fuera de Git.
+
 ## Requisitos
 
-- Docker y Docker Compose
+La lista completa y secuencial de instalación está en
+[Onboarding de desarrollo](#onboarding-de-desarrollo). Para ejecutar la
+aplicación local también se necesitan Docker y Docker Compose.
 
 ## Despliegue con un solo comando
+
+Antes del primer arranque, crea el `.env` local para Compose y completa los
+dos valores de MinIO con credenciales locales:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+`ANTHROPIC_API_KEY` puede permanecer vacío si no vas a usar el chat Copilot.
+No pongas credenciales AWS en este archivo.
 
 ```bash
 docker compose up --build
 ```
 
-Este comando levanta los cuatro servicios (MariaDB, MinIO, backend y
-frontend). El backend espera a que MariaDB y MinIO estén listos, aplica las
+Este comando levanta los servicios de MariaDB, MinIO, backend, frontend,
+pipeline `app` y Copilot. El backend espera a que MariaDB y MinIO estén listos, aplica las
 migraciones y siembra únicamente las categorías `dog` y `cat` antes de
 arrancar; no crea imágenes demo ni hace falta ejecutar otro paso manual.
 
@@ -61,11 +302,14 @@ arrancar; no crea imágenes demo ni hace falta ejecutar otro paso manual.
 | Backend (API)   | http://localhost:3100            |
 | Consola MinIO   | http://localhost:9001 (minioadmin/minioadmin) |
 
-Para apagar todo y borrar los datos persistidos (MariaDB y MinIO):
+Para apagar normalmente los servicios, sin borrar los datos persistidos:
 
 ```bash
-docker compose down -v
+docker compose down
 ```
+
+`docker compose down -v` elimina también los volúmenes de MariaDB y MinIO.
+Úsalo únicamente cuando quieras reiniciar desde cero los datos locales.
 
 Las credenciales de MariaDB/MinIO usadas en `docker-compose.yml` son las de
 desarrollo del proyecto; para un despliegue real, cámbialas ahí antes de
@@ -96,10 +340,27 @@ El bucket se crea automáticamente al arrancar el backend.
 
 ### 2. Backend
 
+Antes de ejecutar esos comandos, crea `backend/.env` con la configuración de
+desarrollo siguiente. Este archivo es distinto del `.env` de la raíz que usa
+Docker Compose:
+
+```dotenv
+DATABASE_URL=mysql://root:password@localhost:3306/image_repo
+MINIO_ENDPOINT=localhost
+MINIO_PORT=9000
+MINIO_USE_SSL=false
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=image-annotations
+MAX_UPLOAD_SIZE_BYTES=5242880
+```
+
+No pongas credenciales AWS en `backend/.env` tampoco. Si cambias el puerto
+publicado de MariaDB, ajusta `DATABASE_URL` en este archivo.
+
 ```bash
 cd backend
 npm ci
-cp ../.env.example .env
 npm run db:migrate
 npm run db:seed
 npm run dev
@@ -172,6 +433,10 @@ ignora todo `.env*` salvo las plantillas de ejemplo.
 | `MINIO_SECRET_KEY`      | Credencial secreta                             |
 | `MINIO_BUCKET`          | Bucket donde se guardan las imágenes           |
 | `MAX_UPLOAD_SIZE_BYTES` | Tamaño máximo por imagen (5 MiB por defecto)   |
+
+Los `.env` son configuración local de Compose/backend/MinIO/Copilot. Las
+credenciales AWS se obtienen mediante el perfil SSO `mlops-p2`; nunca las
+copies a un `.env`.
 
 ## API
 
@@ -319,8 +584,8 @@ que el portal funcione de punta a punta:
 - Usa `npm install` la primera vez en cada paquete (`backend/` y `frontend/`).
   `node_modules` no se versiona: se reconstruye desde `package-lock.json`.
 - El backend valida sus variables de entorno al arrancar (fail-fast con Zod).
-  Si falta el `.env` o alguna variable, el proceso termina indicando cuáles
-  faltan; copia `.env.example` a `.env` antes de arrancar.
+  Si falta `backend/.env` o alguna variable, el proceso termina indicando
+  cuáles faltan; usa el bloque de variables de backend documentado arriba.
 - Si publicaste MariaDB en un puerto distinto al 3306 (por ejemplo 3307
   porque el 3306 ya estaba ocupado), ajusta `DATABASE_URL` en `backend/.env`
   para que coincida.
@@ -330,7 +595,9 @@ que el portal funcione de punta a punta:
 
 ## P2-04 — MinIO local y remotes DVC
 
-Esta sección configura el almacenamiento DVC sin cambiar el portal de P1.
+Esta sección contiene los detalles del remote DVC opcional de desarrollo. Para
+el onboarding completo, empieza por [Onboarding de desarrollo](#onboarding-de-desarrollo).
+No necesitas MinIO para leer el dataset compartido de producción.
 
 - `dev` usa `s3://dvc-cache` con endpoint `http://localhost:9000` (MinIO local).
 - `prod` usa `s3://mlops-p2-dvc-cache` en AWS S3.
@@ -342,12 +609,15 @@ Esta sección configura el almacenamiento DVC sin cambiar el portal de P1.
 - `prod` → AWS S3, bucket `mlops-p2-dvc-cache`.
 - `mlops-p2-dataset-releases` → releases finales del dataset.
 - Git versiona la configuración y los archivos `.dvc`; los binarios se guardan en los remotes.
-- Cada integrante necesita sus propias credenciales locales de MinIO y su propio acceso SSO a AWS.
-- No se comparten contraseñas, access keys, secret keys ni tokens SSO.
+- Las credenciales de MinIO son locales de cada integrante; no son credenciales
+  de AWS ni se usan para `prod`.
+- Cada integrante necesita su propio acceso SSO a AWS para `prod`.
+- No se comparten contraseñas, sesiones SSO, access keys, secret keys ni tokens.
 
-### Preparar un clon limpio
+### Flujo opcional: preparar MinIO local
 
-Desde la raíz del proyecto, crea tu archivo `.env` local a partir de la plantilla:
+Solo realiza estos pasos si necesitas usar el remote `dev`. Desde la raíz del
+proyecto, crea tu archivo `.env` local a partir de la plantilla:
 
 ```bash
 test -e .env || cp .env.example .env
@@ -369,7 +639,8 @@ Puedes generar una contraseña con:
 openssl rand -hex 32
 ```
 
-No uses claves AWS en `.env`.
+No uses claves AWS en `.env`. La autenticación de AWS se configura con IAM
+Identity Center / SSO y el perfil local `mlops-p2`.
 
 `frontend/.env.example` es independiente y no cambia para este ticket.
 
@@ -381,17 +652,19 @@ docker compose up -d --no-deps minio
 
 ### Instalar DVC
 
-Instala DVC con soporte S3 en un entorno Python separado:
+Instala DVC con soporte S3 en un entorno Python separado del entorno de `app/`:
 
 ```bash
-python3 -m venv .venv-dvc
+python3.12 -m venv .venv-dvc
 . .venv-dvc/bin/activate
 python -m pip install 'dvc[s3]==3.67.1'
-export DVC_NO_ANALYTICS=1
-export DVC_SITE_CACHE_DIR="${TMPDIR:-/tmp}/p2-04-dvc-site-cache"
+python --version
+dvc --version
+dvc remote list
 ```
 
-El repositorio ya contiene la inicialización de DVC y la configuración de los remotes, por lo que no es necesario ejecutar `dvc init`.
+El repositorio ya contiene la inicialización de DVC y la configuración de los
+remotes. **No ejecutes `dvc init`.**
 
 ### Configurar `dev` con MinIO local
 
@@ -403,7 +676,8 @@ set -a
 set +a
 ```
 
-Configura las credenciales de MinIO únicamente de forma local:
+Configura las credenciales de MinIO únicamente de forma local y solo para
+`dev`:
 
 ```bash
 dvc remote modify --local dev access_key_id "$MINIO_ROOT_USER"
@@ -411,7 +685,9 @@ dvc remote modify --local dev secret_access_key "$MINIO_ROOT_PASSWORD"
 chmod 600 .dvc/config.local
 ```
 
-No omitas `--local`.
+No omitas `--local`: `.dvc/config.local` es local, está ignorado por Git y no
+debe subirse al repositorio. No mezcles estas credenciales con el perfil SSO
+de AWS usado por `prod`.
 
 No agregues `.env` ni `.dvc/config.local` a Git.
 
@@ -489,98 +765,35 @@ Los binarios se guardan en MinIO, no directamente en GitHub.
 
 ### AWS S3 y remote `prod`
 
-AWS está configurado en la región:
-
-```text
-us-east-1
-```
-
-Buckets usados por el proyecto:
+La configuración completa de AWS CLI, IAM Identity Center / SSO, el perfil
+`mlops-p2`, las comprobaciones de lectura y la conexión local de DVC está en
+[Onboarding de desarrollo](#onboarding-de-desarrollo). `prod` usa AWS S3 real,
+sin endpoint personalizado, en `us-east-1`:
 
 | Bucket | Uso |
 |---|---|
 | `mlops-p2-dvc-cache` | Remote DVC `prod`. |
 | `mlops-p2-dataset-releases` | Releases finales del dataset. |
 
-`prod` utiliza AWS S3 real y no utiliza un endpoint personalizado.
-
-Cada integrante necesita su propia identidad autorizada mediante AWS IAM Identity Center / SSO.
-
-El perfil local recomendado es:
-
-```text
-mlops-p2
-```
-
-Instala AWS CLI v2 y comprueba la instalación:
-
-```bash
-aws --version
-```
-
-Configura el acceso SSO:
-
-```bash
-aws configure sso --profile mlops-p2
-aws sso login --profile mlops-p2
-aws sts get-caller-identity --profile mlops-p2
-```
-
-Usa la región:
-
-```text
-us-east-1
-```
-
-No copies la salida de `aws sts get-caller-identity` al repositorio.
-
-Configura el perfil únicamente de forma local para DVC:
-
-```bash
-dvc remote modify --local prod profile mlops-p2
-```
-
-Comprueba nuevamente los remotes:
-
-```bash
-dvc remote list -v
-```
-
-La salida debe incluir:
-
-```text
-dev     s3://dvc-cache
-prod    s3://mlops-p2-dvc-cache
-```
-
-Para subir archivos a AWS S3:
-
-```bash
-dvc push -r prod
-```
-
-Para recuperarlos:
-
-```bash
-dvc pull -r prod
-```
-
-Si la sesión SSO expira:
-
-```bash
-aws sso login --profile mlops-p2
-```
+Para lectura del remote DVC, el permission set debe tener permisos
+conceptualmente equivalentes a `s3:ListBucket` y `s3:GetObject`. Si además
+publicas datasets, el administrador debe asignarte permisos de escritura. No
+uses `dvc push` como prueba de conexión.
 
 ### Flujo recomendado para el equipo
 
 1. Hacer `git pull` para obtener los metadatos `.dvc` más recientes.
 2. Activar el entorno de DVC.
 3. Iniciar sesión con AWS SSO si se va a usar `prod`.
-4. Ejecutar `dvc pull -r prod` para recuperar los archivos del dataset compartido.
-5. Agregar o actualizar archivos del dataset.
-6. Ejecutar `dvc add <ruta>` para actualizar los metadatos.
-7. Ejecutar `dvc push -r prod` para subir los binarios a S3.
-8. Versionar con Git los archivos `.dvc` y los cambios de código correspondientes.
+4. Ejecutar `dvc status -r prod data/raw/images.dvc data/raw/annotations.dvc`
+   para consultar el estado sin subir datos.
+5. Ejecutar `dvc pull -r prod data/raw/images.dvc data/raw/annotations.dvc`
+   solo si necesitas materializar el dataset localmente.
+6. Si eres una persona mantenedora autorizada, agregar o actualizar datos,
+   ejecutar `dvc add <ruta>` y publicar con `dvc push -r prod` como una
+   operación explícita, no como prueba de conexión.
+7. Versionar con Git los archivos `.dvc` y los cambios de código
+   correspondientes.
 
 No subas los binarios grandes directamente al repositorio de GitHub.
 
@@ -590,10 +803,13 @@ Los siguientes archivos o datos no deben versionarse:
 
 - `.env`
 - `.dvc/config.local`
-- access keys de AWS
-- secret keys de AWS
-- tokens SSO
+- credenciales AWS, incluidas access keys y secret keys
+- sesiones y tokens SSO
 - credenciales reales de MinIO
+
+Cada persona debe usar su propia identidad AWS. No compartas passwords,
+sesiones SSO, access keys ni tokens, y no pongas credenciales AWS en ningún
+`.env`.
 
 Comprueba que los archivos privados estén ignorados:
 
@@ -635,8 +851,12 @@ Antes de cerrar P2-04, verificar:
 - `docker compose up -d --no-deps minio` levanta MinIO.
 - `.env.example` existe y no contiene credenciales reales.
 - `dvc remote list -v` muestra `dev` y `prod`.
-- `dvc push -r dev` funciona siguiendo este README desde un clon limpio.
-- `dvc push -r prod` y `dvc pull -r prod` funcionan con AWS S3.
+- `dvc push -r dev` funciona para una persona autorizada que use MinIO local.
+- `aws s3api head-bucket`, `aws s3api list-objects-v2` y `dvc status -r prod`
+  funcionan con el perfil SSO autorizado; `dvc pull` se usa solo cuando se
+  necesita materializar el dataset.
+- `dvc push -r prod` se prueba únicamente con autorización explícita de
+  escritura; no es una prueba de conectividad.
 - `git log --all -p -S 'AKIA'` no devuelve resultados.
 - `.env` y `.dvc/config.local` permanecen fuera de Git.
 - Los buckets `mlops-p2-dvc-cache` y `mlops-p2-dataset-releases` existen en AWS.
@@ -776,8 +996,10 @@ porque la cola de re-anotación —cuando la compuerta bloquea el release—
 ocurre ahí), se agrega el servicio `app`: el pipeline Python, que reutiliza
 el mismo MariaDB y el mismo MinIO del portal (mismas credenciales de
 `.env`, sin variables nuevas). Al arrancar, `app` valida que puede
-conectarse a ambos y queda a la espera de que los siguientes frentes
-implementen la lógica de cada tier.
+conectarse a ambos, ejecuta el quality gate y puede regenerar
+`reports/quality.json`. Un estado `failed` queda registrado en los logs y debe
+revisarse antes de promover o publicar el dataset; levantar `app` no sustituye
+la compuerta de DVC.
 
 El servicio `copilot` (P2-52) usa la misma imagen que `app` y atiende el chat
 de la pantalla Copilot a través de nginx (`/copilot-api/`), sin publicar
