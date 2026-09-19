@@ -69,7 +69,11 @@ def test_dvc_pipeline_has_report_gate_and_downstream_split():
 
     assert "always_changed" not in stages["quality_report"]
     assert stages["quality_report"]["cmd"].endswith("dvc_quality_report_stage.py")
-    assert stages["quality_gate"]["deps"] == ["../reports/quality.json"]
+    assert stages["quality_gate"]["deps"] == [
+        "../reports/quality.json",
+        "dvc_gate_stage.py",
+        "presentation/contracts.py",
+    ]
     assert any(
         output == "../reports/.quality_gate.passed"
         or (

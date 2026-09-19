@@ -33,6 +33,16 @@ const splitSummarySchema = z.object({
   ratio: z.number().min(0).max(1),
 });
 
+const classDistributionSchema = z.record(z.string(), z.record(z.string(), z.number().int().min(0)));
+
+const leakageSchema = z.object({
+  status: z.enum(["passed", "warning", "failed"]).optional(),
+  checked_groups: z.number().int().min(0).optional(),
+  duplicate_groups: z.number().int().min(0).optional(),
+  cross_split_groups: z.number().int().min(0).optional(),
+  coverage: z.number().int().min(0).optional(),
+});
+
 export const splitsReportSchema = z
   .object({
     schema_version: z.literal("1.0"),
@@ -43,6 +53,8 @@ export const splitsReportSchema = z
       validation: splitSummarySchema,
       test: splitSummarySchema,
     }),
+    class_distribution: classDistributionSchema.default({}),
+    leakage: leakageSchema.default({}),
   })
   .superRefine((report, context) => {
     const entries = Object.entries(report.splits);

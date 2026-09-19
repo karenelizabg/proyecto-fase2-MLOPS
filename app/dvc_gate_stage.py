@@ -13,17 +13,32 @@ PASS_MARKER = REPORTS_DIR / ".quality_gate.passed"
 logger = logging.getLogger("dvc-quality-gate")
 
 
+def read_quality_report() -> QualityReport:
+    """Load and validate the report shared by the downstream stages."""
+    if not REPORT_PATH.exists():
+        raise RuntimeError(f"No existe el reporte de calidad: {REPORT_PATH}")
+    try:
+        return QualityReport.model_validate_json(REPORT_PATH.read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise RuntimeError(f"El reporte de calidad no cumple el contrato: {REPORT_PATH}") from error
+
+
+def assert_quality_gate_passed() -> None:
+    """Refuse downstream work unless the current report and marker both pass."""
+    report = read_quality_report()
+    if report.status == "failed":
+        raise RuntimeError("La compuerta de calidad está failed; no se puede generar el split.")
+    if not PASS_MARKER.exists():
+        raise RuntimeError("Falta el marcador de la compuerta de calidad aprobada.")
+
+
 def enforce_quality_gate() -> int:
     """Return a non-zero status for failed reports and mark accepted reports."""
     PASS_MARKER.unlink(missing_ok=True)
-    if not REPORT_PATH.exists():
-        logger.error("No existe el reporte de calidad: %s", REPORT_PATH)
-        return 1
-
     try:
-        report = QualityReport.model_validate_json(REPORT_PATH.read_text(encoding="utf-8"))
-    except ValueError:
-        logger.exception("El reporte de calidad no cumple el contrato: %s", REPORT_PATH)
+        report = read_quality_report()
+    except RuntimeError as error:
+        logger.error("%s", error)
         return 1
 
     if report.status == "failed":

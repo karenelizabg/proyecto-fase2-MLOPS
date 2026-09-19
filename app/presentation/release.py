@@ -107,6 +107,37 @@ def _category_counts(quality_report_dict: dict) -> dict[str, int]:
     }
 
 
+def _quality_check(quality_report_dict: dict, name: str) -> dict:
+    return next(check for check in quality_report_dict["checks"] if check["check_name"] == name)
+
+
+def _annotation_count(quality_report_dict: dict) -> int:
+    return int(
+        _quality_check(quality_report_dict, "degenerate_boxes")["details"]["total_annotations"]
+    )
+
+
+def _classes_crossing_minimum(quality_a: dict, quality_b: dict) -> dict[str, list[str]]:
+    min_check_a = _quality_check(quality_a, "min_images_per_class")
+    min_check_b = _quality_check(quality_b, "min_images_per_class")
+    threshold_a = min_check_a["details"]["criterion"]["threshold"]
+    threshold_b = min_check_b["details"]["criterion"]["threshold"]
+    if threshold_a != threshold_b:
+        raise ValueError("No se puede comparar releases con mínimos de imágenes distintos")
+
+    counts_a, counts_b = _category_counts(quality_a), _category_counts(quality_b)
+    categories = sorted(set(counts_a) | set(counts_b))
+    entered, left = [], []
+    for category in categories:
+        before = counts_a.get(category, 0) >= threshold_a
+        after = counts_b.get(category, 0) >= threshold_b
+        if not before and after:
+            entered.append(category)
+        elif before and not after:
+            left.append(category)
+    return {"entered": entered, "left": left}
+
+
 def diff_releases(version_a: str, version_b: str, *, reports_dir: Path) -> dict:
     """Compara dos releases ya cortados: conteo por categoría y status de cada check.
 
@@ -132,6 +163,21 @@ def diff_releases(version_a: str, version_b: str, *, reports_dir: Path) -> dict:
     checks_b = {c["check_name"]: c for c in quality_b["checks"]}
     check_names = sorted(set(checks_a) | set(checks_b))
 
+    check_diff = {}
+    for name in check_names:
+        check_a, check_b = checks_a.get(name), checks_b.get(name)
+        metric_a = check_a["metric_value"] if check_a is not None else None
+        metric_b = check_b["metric_value"] if check_b is not None else None
+        check_diff[name] = {
+            "from": check_a["passed"] if check_a is not None else None,
+            "to": check_b["passed"] if check_b is not None else None,
+            "metric_from": metric_a,
+            "metric_to": metric_b,
+            "metric_delta": metric_b - metric_a
+            if isinstance(metric_a, (int, float)) and isinstance(metric_b, (int, float))
+            else None,
+        }
+
     return {
         "from": version_a,
         "to": version_b,
@@ -140,13 +186,16 @@ def diff_releases(version_a: str, version_b: str, *, reports_dir: Path) -> dict:
             name: {"from": counts_a.get(name, 0), "to": counts_b.get(name, 0)}
             for name in categories
         },
-        "checks": {
-            name: {
-                "from": checks_a[name]["passed"] if name in checks_a else None,
-                "to": checks_b[name]["passed"] if name in checks_b else None,
-            }
-            for name in check_names
+        "image_deltas": {
+            name: counts_b.get(name, 0) - counts_a.get(name, 0) for name in categories
         },
+        "annotations": {
+            "from": _annotation_count(quality_a),
+            "to": _annotation_count(quality_b),
+            "delta": _annotation_count(quality_b) - _annotation_count(quality_a),
+        },
+        "classes_crossing_minimum": _classes_crossing_minimum(quality_a, quality_b),
+        "checks": check_diff,
     }
 
 

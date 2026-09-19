@@ -30,6 +30,8 @@ stages:
     cmd: uv run python dvc_gate_stage.py
     deps:
       - ../reports/quality.json
+      - dvc_gate_stage.py
+      - presentation/contracts.py
     outs:
       - ../reports/.quality_gate.passed:
           cache: false
@@ -42,6 +44,7 @@ stages:
       - ../data/raw/images
       - ../reports/.quality_gate.passed
       - dvc_split_stage.py
+      - dvc_gate_stage.py
       - ingestion
       - analyzers
       - policies

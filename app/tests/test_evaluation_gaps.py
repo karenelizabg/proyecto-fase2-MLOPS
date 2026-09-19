@@ -1,11 +1,11 @@
 import json
 from pathlib import Path
 
+import dvc_gate_stage
+import dvc_split_stage
 import pytest
 import yaml
 
-import dvc_gate_stage
-import dvc_split_stage
 from analyzers.spatial_bias import SpatialBiasConfig, analyze_spatial_bias
 from policies.models import load_quality_policy
 from presentation.release import cut_release, diff_releases
