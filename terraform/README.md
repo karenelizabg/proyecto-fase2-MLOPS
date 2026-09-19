@@ -60,6 +60,20 @@ La validación estática comprueba sintaxis, referencias y esquema del provider;
 no garantiza permisos, cuotas, compatibilidad de versiones ni un despliegue exitoso.
 Referencia: [terraform validate](https://developer.hashicorp.com/terraform/cli/commands/validate).
 
+### Autenticación local y límites de onboarding
+
+Cuando una tarea de Terraform requiera consultar AWS y el administrador lo haya
+autorizado, Terraform local puede usar el perfil AWS `mlops-p2` mediante la
+cadena normal de credenciales del SDK. Ese perfil se obtiene con IAM Identity
+Center / SSO; no se deben guardar access keys, contraseñas, sesiones ni tokens
+en este repositorio.
+
+GitHub Actions usa OIDC para autenticarse en AWS y es un mecanismo diferente:
+la autenticación OIDC de GitHub no autentica automáticamente la Mac de una
+persona desarrolladora. No ejecutes `terraform apply` ni `terraform destroy`
+como parte del onboarding. No inicialices el backend remoto hasta que el
+administrador proporcione y confirme el bucket de state correspondiente.
+
 ## Límites del ticket
 
 No ejecutar `apply` ni importar recursos existentes como parte de P2-06.
@@ -119,8 +133,10 @@ La validación del código no demuestra una autenticación real. Esta última qu
 pendiente hasta que una persona autorizada cree el provider/rol fuera de esta
 tarea y registre el output `role_arn` como variable de repositorio `AWS_ROLE_ARN`
 en GitHub. El ARN no es una credencial y no necesita escribirse en los archivos.
-Sin la variable o sin el rol real, el job OIDC en `main` falla explícitamente;
-los PRs no ejecutan ese job y no fallan por falta de autorización de su rama.
+Si `AWS_ROLE_ARN` no existe, el workflow emite un warning y omite la prueba
+OIDC; no falla por la ausencia de esa variable. Cuando la variable está
+configurada, el job intenta asumir el rol y verifica STS. Los PRs no ejecutan
+ese job de `main` y no fallan por falta de autorización de su rama.
 
 ### Provider existente y seguridad
 
