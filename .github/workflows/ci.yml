@@ -188,7 +188,7 @@ jobs:
         if: steps.role.outputs.configured == 'true'
         run: |
           uv venv .venv-dvc-ci --python 3.12
-          uv pip install --python .venv-dvc-ci/bin/python 'dvc[s3]==3.67.1'
+          uv pip install --no-build --python .venv-dvc-ci/bin/python 'dvc[s3]==3.67.1'
       - name: Recuperar únicamente los datos versionados de PROD
         if: steps.role.outputs.configured == 'true'
         run: .venv-dvc-ci/bin/dvc pull -r prod data/raw/images.dvc data/raw/annotations.dvc
@@ -199,11 +199,11 @@ jobs:
       - name: Generar el reporte de calidad de PROD
         if: steps.role.outputs.configured == 'true'
         working-directory: app
-        run: uv run python dvc_quality_report_stage.py
+        run: uv run --locked --no-build python dvc_quality_report_stage.py
       - name: Ejecutar la compuerta sobre PROD
         if: steps.role.outputs.configured == 'true'
         working-directory: app
-        run: uv run python dvc_gate_stage.py
+        run: uv run --locked --no-build python dvc_gate_stage.py
 
   ci-ok:
     name: CI OK
