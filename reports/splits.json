@@ -15,5 +15,26 @@
       "image_count": 90,
       "ratio": 0.15
     }
+  },
+  "class_distribution": {
+    "train": {
+      "3": 210,
+      "4": 211
+    },
+    "validation": {
+      "3": 45,
+      "4": 45
+    },
+    "test": {
+      "3": 45,
+      "4": 45
+    }
+  },
+  "leakage": {
+    "status": "passed",
+    "checked_groups": 600,
+    "duplicate_groups": 0,
+    "cross_split_groups": 0,
+    "coverage": 600
   }
 }
