@@ -67,6 +67,10 @@ class SplitsReport(ContractModel):
     dataset_version: Identifier
     total_images: int = Field(gt=0)
     splits: DatasetSplits
+    class_distribution: dict[str, dict[str, Count]] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
+    leakage: dict[str, JsonValue] = Field(default_factory=dict, exclude_if=lambda value: not value)
 
     @model_validator(mode="after")
     def consistent_split_summary(self) -> Self:

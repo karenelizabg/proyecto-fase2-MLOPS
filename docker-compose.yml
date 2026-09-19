@@ -1,6 +1,6 @@
 # Variables que exige `storage.settings.Settings` (las usan `app` y `copilot`).
 x-pipeline-env: &pipeline-env
-  DATABASE_URL: mysql+pymysql://root:password@mariadb:3306/image_repo
+  DATABASE_URL: "mysql+pymysql://root:${MARIADB_ROOT_PASSWORD:?Define MARIADB_ROOT_PASSWORD en .env}@mariadb:3306/image_repo"
   MINIO_ENDPOINT: minio
   MINIO_PORT: 9000
   MINIO_USE_SSL: "false"
@@ -14,14 +14,14 @@ services:
   mariadb:
     image: mariadb:11
     environment:
-      MARIADB_ROOT_PASSWORD: password
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Define MARIADB_ROOT_PASSWORD en .env}
       MARIADB_DATABASE: image_repo
     volumes:
       - mariadb_data:/var/lib/mysql
     ports:
       - "3306:3306"
     healthcheck:
-      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-uroot", "-ppassword"]
+      test: ["CMD-SHELL", "mariadb-admin ping -h localhost -uroot -p\"$${MARIADB_ROOT_PASSWORD}\""]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -48,11 +48,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3100
-      DATABASE_URL: mysql://root:password@mariadb:3306/image_repo
+      DATABASE_URL: "mysql://root:${MARIADB_ROOT_PASSWORD:?Define MARIADB_ROOT_PASSWORD en .env}@mariadb:3306/image_repo"
       DB_HOST: mariadb
       DB_PORT: 3306
       DB_USER: root
-      DB_PASSWORD: password
+      DB_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Define MARIADB_ROOT_PASSWORD en .env}
       DB_NAME: image_repo
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000

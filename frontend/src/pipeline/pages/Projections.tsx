@@ -8,6 +8,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { getImageFileUrl } from "@/lib/api/images";
 import { PageHeader } from "../components/PageHeader";
 import { ReportBoundary } from "../components/ReportBoundary";
 import { useProjectionsReport } from "../dataSource";
@@ -24,6 +25,11 @@ export function ProjectionTooltip({
   );
   return (
     <div className="rounded-lg border border-border bg-surface p-3 text-sm text-ink">
+      <img
+        src={getImageFileUrl(point.image_id)}
+        alt={`Vista previa de ${point.file_name}`}
+        className="mb-2 h-24 w-24 rounded object-cover"
+      />
       <p>{point.file_name}</p>
       <p>COCO image_id: {point.image_id}</p>
       <p>Categorías: {names.length ? names.join(", ") : "Sin etiqueta"}</p>
@@ -36,6 +42,10 @@ export function ProjectionTooltip({
 
 function ProjectionView({ report }: Readonly<{ report: ProjectionsReport }>) {
   const [method, setMethod] = useState<"pca" | "tsne">("pca");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const selectedCategoryId = selectedCategory === "all" ? null : Number(selectedCategory);
+  const matchesCategory = (point: ProjectionPoint) =>
+    selectedCategoryId === null || point.category_ids.includes(selectedCategoryId);
   const groups = [
     ...[...report.categories]
       .sort((a, b) => a.id - b.id)
@@ -44,20 +54,27 @@ function ProjectionView({ report }: Readonly<{ report: ProjectionsReport }>) {
         label: category.name,
         color: colors[index % colors.length],
         points: report[method].points.filter(
-          (point) => point.category_ids.length === 1 && point.category_ids[0] === category.id
+          (point) =>
+            point.category_ids.length === 1 &&
+            point.category_ids[0] === category.id &&
+            matchesCategory(point)
         ),
       })),
     {
       key: "multi",
       label: "Multietiqueta",
       color: "#c084fc",
-      points: report[method].points.filter((point) => point.category_ids.length > 1),
+      points: report[method].points.filter(
+        (point) => point.category_ids.length > 1 && matchesCategory(point)
+      ),
     },
     {
       key: "unlabeled",
       label: "Sin etiqueta",
       color: "#94a3b8",
-      points: report[method].points.filter((point) => point.category_ids.length === 0),
+      points: report[method].points.filter(
+        (point) => point.category_ids.length === 0 && matchesCategory(point)
+      ),
     },
   ];
   return (
@@ -79,6 +96,21 @@ function ProjectionView({ report }: Readonly<{ report: ProjectionsReport }>) {
       >
         <option value="pca">PCA</option>
         <option value="tsne">t-SNE</option>
+      </select>
+      <label className="block" htmlFor="projection-category">
+        Categoría
+      </label>
+      <select
+        id="projection-category"
+        value={selectedCategory}
+        onChange={(event) => setSelectedCategory(event.target.value)}
+      >
+        <option value="all">Todas</option>
+        {report.categories.map((category) => (
+          <option key={category.id} value={category.id}>
+            {category.name}
+          </option>
+        ))}
       </select>
       {method === "pca" ? (
         <p>

@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { PageHeader } from "../components/PageHeader";
 import { ReportBoundary } from "../components/ReportBoundary";
 import { StatusBadge } from "../components/StatusBadge";
-import { useQualityReport, useSplitsReport, useVersionsReport } from "../dataSource";
+import { useQualityReport, useVersionsReport } from "../dataSource";
 
 /** Una StatCard que se apaga a "no disponible" si su fuente (splits/versions) no existe todavía. */
 function OptionalStat({
@@ -33,7 +33,6 @@ function OptionalStat({
 
 export function OverviewPage() {
   const quality = useQualityReport();
-  const splits = useSplitsReport();
   const versions = useVersionsReport();
 
   return (
@@ -42,6 +41,34 @@ export function OverviewPage() {
         <ReportBoundary state={quality}>
           {(report) => {
             const passedChecks = report.checks.filter((check) => check.passed).length;
+            const balanceCheck = report.checks.find(
+              (check) => check.check_name === "max_imbalance_ratio"
+            );
+            const categories = Array.isArray(balanceCheck?.details.images_per_category)
+              ? balanceCheck.details.images_per_category
+              : [];
+            const imageIds = categories.flatMap((entry) => {
+              if (!entry || typeof entry !== "object") return [];
+              const ids = (entry as Record<string, unknown>).image_ids;
+              return Array.isArray(ids)
+                ? ids.filter((id): id is number => typeof id === "number")
+                : [];
+            });
+            const totalImages =
+              imageIds.length > 0
+                ? new Set(imageIds).size
+                : categories.reduce((total, entry) => {
+                    if (!entry || typeof entry !== "object") return total;
+                    const count = (entry as Record<string, unknown>).image_count;
+                    return total + (typeof count === "number" ? count : 0);
+                  }, 0);
+            const boxesCheck = report.checks.find(
+              (check) => check.check_name === "degenerate_boxes"
+            );
+            const totalBoxes =
+              boxesCheck && typeof boxesCheck.details.total_annotations === "number"
+                ? boxesCheck.details.total_annotations
+                : 0;
             return (
               <>
                 <PageHeader
@@ -53,11 +80,13 @@ export function OverviewPage() {
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <OptionalStat
-                    state={splits}
+                    state={quality}
                     label="Imágenes totales"
                     accent="lilac"
-                    render={() => (splits.status === "success" ? splits.data.total_images : 0)}
+                    render={() => totalImages}
                   />
+                  <StatCard label="Bounding boxes" value={totalBoxes} accent="peach" />
+                  <StatCard label="Categorías" value={categories.length} accent="mint" />
                   <StatCard label="Checks ejecutados" value={report.checks.length} accent="blue" />
                   <StatCard label="Checks aprobados" value={passedChecks} accent="mint" />
                   <OptionalStat
