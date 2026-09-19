@@ -183,7 +183,8 @@ Ejecutar:
 npm run db:seed
 ```
 
-El seeder crea categorías e imágenes de ejemplo.
+El seeder crea únicamente las categorías `dog` y `cat`; no genera imágenes de
+ejemplo ni objetos `sample-red.png`/`sample-blue.png` en MinIO.
 
 Es idempotente, por lo que puede ejecutarse varias veces:
 

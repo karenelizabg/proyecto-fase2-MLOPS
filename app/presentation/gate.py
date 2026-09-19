@@ -1,6 +1,6 @@
 """Tier 3 — la compuerta de calidad end-to-end (P2-22/23/24).
 
-Corre los 6 analizadores existentes contra el dataset real, arma el
+Corre los 7 checks de calidad contra el dataset real, arma el
 `QualityReport` (contrato v1.0 de P2-12) y lo escribe a disco. Si algún
 check con `action: fail` no pasa, `main()` devuelve 1 — pensado para
 encadenarse como paso previo obligatorio de la siguiente etapa del

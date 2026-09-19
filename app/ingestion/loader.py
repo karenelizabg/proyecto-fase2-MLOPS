@@ -16,9 +16,8 @@ from ingestion.models import CocoDataset
 def load_dataset(annotations_dir: Path) -> CocoDataset:
     """Lee y valida todos los `*.json` de `annotations_dir` como un solo dataset.
 
-    Las categorías se deduplican por id (el seeder del portal siempre asigna
-    los mismos ids fijos: person=1, car=2, dog=3, cat=4), quedándose con la
-    primera aparición. Si dos lotes usan el mismo id de categoría para
+    Las categorías se deduplican por id, quedándose con la primera aparición.
+    Si dos lotes usan el mismo id de categoría para
     nombres distintos, es una colisión real (no una simple repetición del
     seeder) y se rechaza aquí en vez de mezclar silenciosamente anotaciones
     de una clase con el nombre de otra.

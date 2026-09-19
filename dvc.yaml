@@ -1,19 +1,11 @@
 stages:
-  quality_gate:
-    # DVC's stage run-cache (`.dvc/cache/runs/`) fails on this machine with
-    # WinError 3 during its internal tmp-file move — very likely OneDrive
-    # syncing `Documents` in real time and locking the file mid-move, not a
-    # bug in this stage. `always_changed: true` skips that code path
-    # entirely (see `dvc/stage/cache.py::_can_hash`); the tradeoff is this
-    # stage always re-runs on `dvc repro` instead of skipping when
-    # unchanged, which is fine given how cheap it is.
-    always_changed: true
+  quality_report:
     wdir: app
-    cmd: uv run python dvc_gate_stage.py
+    cmd: uv run python dvc_quality_report_stage.py
     deps:
       - ../data/raw/annotations
       - ../data/raw/images
-      - dvc_gate_stage.py
+      - dvc_quality_report_stage.py
       - ingestion
       - analyzers
       - policies
@@ -32,6 +24,36 @@ stages:
     metrics:
       - ../reports/quality.json:
           cache: false
+
+  quality_gate:
+    wdir: app
+    cmd: uv run python dvc_gate_stage.py
+    deps:
+      - ../reports/quality.json
+    outs:
+      - ../reports/.quality_gate.passed:
+          cache: false
+
+  split:
+    wdir: app
+    cmd: uv run python dvc_split_stage.py
+    deps:
+      - ../data/raw/annotations
+      - ../data/raw/images
+      - ../reports/.quality_gate.passed
+      - dvc_split_stage.py
+      - ingestion
+      - analyzers
+      - policies
+      - presentation/contracts.py
+      - presentation/gate.py
+      - presentation/splits.py
+      - storage/settings.py
+      - splits
+    outs:
+      - ../reports/splits.json:
+          cache: false
+
   projections:
     wdir: app
     cmd: uv run python dvc_projections_stage.py

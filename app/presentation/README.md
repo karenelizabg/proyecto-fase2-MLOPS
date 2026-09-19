@@ -52,7 +52,7 @@ Publica en `details.criterion` el campo evaluado (`metric: "metric_value"`),
 el `threshold` y el `operator`. Es una extensión documentada de `details`,
 no un campo nuevo de `QualityCheck` ni una nueva versión del contrato.
 El esquema genérico permite estas claves; las pruebas del gate garantizan
-su presencia y significado para los seis checks reales.
+su presencia y significado para los siete checks reales.
 
 | Check | Valor | Criterio de cumplimiento |
 |---|---|---|
@@ -62,6 +62,7 @@ su presencia y significado para los seis checks reales.
 | `degenerate_boxes` | Cantidad de anotaciones inválidas | `<=` cantidad permitida |
 | `duplicate_similarity_threshold` | Cantidad de pares detectados | `== 0` pares |
 | `spatial_bias` | Menor desviación estándar de centros normalizados X/Y | `>=` dispersión mínima |
+| `cross_split_leakage` | Pares casi duplicados entre splits | `<=` umbral permitido |
 
 Para desbalance, `criterion.requires_ratio_defined=true` exige además
 `details.ratio_defined=true`. Con una categoría vacía, el valor cero es un
@@ -159,8 +160,8 @@ en esta copia. Cualquier necesidad nueva debe discutirse antes de cambiar v1.0.
 
 `gate.py` es el primer código que efectivamente corre el pipeline contra el
 dataset real: `ingestion/loader.py` junta los `annotations-lote-*.json` de
-`data/raw/annotations/` en un `CocoDataset` validado, corre los 6
-analizadores existentes (`imbalance`, `small_objects`, `invalid_boxes`,
+`data/raw/annotations/` en un `CocoDataset` validado, corre los checks de
+calidad (`imbalance`, `small_objects`, `invalid_boxes`,
 `duplicates`, `spatial_bias`, `cross_split_leakage`), arma un `QualityReport` real (no el ejemplo)
 y lo escribe en `REPORTS_DIR/quality.json`.
 
@@ -280,8 +281,9 @@ Este servidor sigue pudiendo invocarse a mano vía stdio, como arriba.
 un `SplitResult` con la misma política de similitud y una única `SplitsConfig`.
 Devuelve `(QualityReport, SplitResult)`. `build_quality_report()` conserva la API
 de solo reporte; `cut_release()` consume ambos resultados de esa evaluación,
-sin volver a detectar duplicados ni generar otra asignación. Un release con
-calidad failed sigue permitido; los releases históricos no se reescriben.
+sin volver a detectar duplicados ni generar otra asignación. Un release histórico
+puede conservar calidad failed, pero `cut_release()` rechaza nuevos releases con
+calidad failed.
 
 Leakage cuenta aristas pHash directas, no todas las combinaciones de una componente
 transitiva: A-B/B-A cuenta una vez. `details.image_pairs` contiene solo pares
@@ -297,7 +299,7 @@ independientes impide generar tres splits no vacíos y aborta explícitamente la
 evaluación (por ejemplo, threshold pHash=0 une todas las imágenes). No se publica
 un cero inventado. Settings mantiene sus seis controles; leakage no es editable.
 
-DVC quality_gate incorpora código y parámetros de splits (train/val/test/seed).
-No se añade stage ni se persisten assignments. El wrapper sigue distinguiendo
-éxito técnico de `quality.status`: una evaluación failed calculada exitosamente
-no hace fallar DVC. `gate.main()` sí devuelve 1 ante failed.
+DVC separa `quality_report` de `quality_gate` e incorpora código y parámetros de
+splits (train/val/test/seed). El stage `split` depende del marcador que solo se
+escribe cuando la compuerta pasa; una evaluación failed hace fallar DVC y no
+ejecuta el downstream. No se persisten assignments en este stage.
